@@ -10,6 +10,13 @@ export const metadata = {
   description: "Modern Metal Furniture Manufacturing ERP System",
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#E35E35',
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ar" dir="rtl">

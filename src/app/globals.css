@@ -344,6 +344,15 @@ label {
   gap: 1.5rem;
 }
 
+/* Home page main grid layout */
+.home-main-grid {
+  display: grid;
+  grid-template-columns: 2.5fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+  align-items: start;
+}
+
 /* Mobile & Tablet Breaks */
 @media (max-width: 1024px) {
   .main-content {
@@ -366,6 +375,10 @@ label {
   }
 
   .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-main-grid {
     grid-template-columns: 1fr;
   }
 
@@ -398,9 +411,11 @@ label {
     flex-direction: column;
     align-items: stretch;
   }
-  .subfield-row > * {
+
+  .subfield-row>* {
     width: 100% !important;
   }
+
   .dashboard-grid {
     grid-template-columns: 1fr;
   }

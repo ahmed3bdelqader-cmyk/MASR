@@ -154,7 +154,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '15px', flex: '1', justifyContent: 'flex-end', alignItems: 'center', minWidth: 'fit-content' }}>
+        <div style={{ display: 'flex', gap: '15px', flex: '1', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ textAlign: 'left', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '15px', marginLeft: '5px' }}>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>أهلاً بك،</div>
             <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 800 }}>{userName}</div>
@@ -222,7 +222,7 @@ export default function Home() {
           ))}
         </div>
 
-        <div className="responsive-grid" style={{ gridTemplateColumns: '2.5fr 1fr', gap: '1.5rem', marginBottom: '1rem', alignItems: 'start' }}>
+        <div className="home-main-grid">
           {/* All Modules Section */}
           <div style={{ minWidth: '0' }}>
             <h2 style={{ color: '#fff', fontSize: '1.3rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
