@@ -85,7 +85,7 @@ export default function SalesHistoryPage() {
     const sym = () => getSettings().currencySymbol || 'ج.م';
     const appName = () => getSettings().appName || 'Stand Masr ERP';
 
-    const fetchInvoices = () => fetch('/api/sales').then(r => r.json()).then((d: any[]) => { setInvoices(d); setLoading(false); });
+    const fetchInvoices = () => fetch('/api/sales').then(r => r.json()).then((d: any) => { setInvoices(Array.isArray(d) ? d : []); setLoading(false); }).catch(() => { setInvoices([]); setLoading(false); });
 
     // ── Delete invoice ────────────────────────────────────────────────────────
     const handleDelete = async (inv: any) => {

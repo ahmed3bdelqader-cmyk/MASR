@@ -54,9 +54,11 @@ export default function InventoryPage() {
     const [auditLowOnly, setAuditLowOnly] = useState(false);
 
     const fetchInventory = async () => {
-        const res = await fetch('/api/inventory');
-        const data = await res.json();
-        setItems(data);
+        try {
+            const res = await fetch('/api/inventory');
+            const data = await res.json();
+            setItems(Array.isArray(data) ? data : []);
+        } catch { setItems([]); }
         setLoading(false);
     };
     useEffect(() => { fetchInventory(); }, []);

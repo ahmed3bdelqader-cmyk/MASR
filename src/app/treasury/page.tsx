@@ -36,8 +36,8 @@ export default function TreasuryPage() {
         try {
             const res = await fetch('/api/treasury');
             const data = await res.json();
-            setTreasuries(data);
-        } catch (e) { console.error(e); } finally { setLoading(false); }
+            setTreasuries(Array.isArray(data) ? data : []);
+        } catch (e) { console.error(e); setTreasuries([]); } finally { setLoading(false); }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {

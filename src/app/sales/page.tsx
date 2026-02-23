@@ -2,8 +2,8 @@
 import React, { useEffect, useState } from 'react';
 
 export default function SalesPage() {
-    const [clients, setClients] = useState([]);
-    const [products, setProducts] = useState([]);
+    const [clients, setClients] = useState<any[]>([]);
+    const [products, setProducts] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
     const [invoiceNo, setInvoiceNo] = useState('');
@@ -15,8 +15,8 @@ export default function SalesPage() {
     const [isAdmin, setIsAdmin] = useState(false);
 
     useEffect(() => {
-        fetch('/api/clients').then(res => res.json()).then(setClients);
-        fetch('/api/products').then(res => res.json()).then(setProducts);
+        fetch('/api/clients').then(res => res.json()).then(data => setClients(Array.isArray(data) ? data : []));
+        fetch('/api/products').then(res => res.json()).then(data => setProducts(Array.isArray(data) ? data : []));
 
         try {
             const u = JSON.parse(localStorage.getItem('erp_user') || '{}');
@@ -97,7 +97,6 @@ export default function SalesPage() {
                     <div style={{ position: 'relative' }}>
                         <label htmlFor="invNo">رقم الفاتورة (يمكنك تعديله)</label>
                         <input id="invNo" type="text" className="input-glass" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} required placeholder="INV-0001" title="رقم الفاتورة" />
-                        <span style={{ position: 'absolute', left: '10px', top: '38px', fontSize: '0.75rem', color: '#919398', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>آلي أو مخصص</span>
                     </div>
                     <div>
                         <label htmlFor="clientId">اسم العميل / الشركة</label>
