@@ -1,0 +1,288 @@
+// e:/STAND-MASR/prisma/schema.prisma
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// 1- إدارة العملاء (Clients)
+model Client {
+  id          String   @id @default(cuid())
+  serial      Int      @unique
+  name        String
+  storeName   String?
+  address     String?
+  phone1      String?
+  phone2      String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  invoices    Invoice[]
+  payments    ClientPayment[]
+}
+
+model ClientPayment {
+  id          String   @id @default(cuid())
+  amount      Float
+  paymentDate DateTime @default(now())
+  method      String   // BANK, CASH, VODAFONE
+  clientId    String
+  invoiceId   String?  
+  client      Client   @relation(fields: [clientId], references: [id])
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
+
+  createdAt   DateTime @default(now())
+}
+
+// 2- الموارد البشرية (Employees & HR)
+model Employee {
+  id          String   @id @default(cuid())
+  employeeId  Int      @unique // الرقم الوظيفي (يتم توليده يدوياً أو إدخاله)
+  name        String
+  title       String   // المسمى الوظيفي
+  qualification String? // المؤهل
+  age         Int?
+  nationalId  String?  // الرقم القومي
+  address     String?
+  contact     String?  // رقم الهاتف 1
+  contact2    String?  // رقم الهاتف 2
+  hireDate    DateTime @default(now())
+  
+  contractType String  @default("MONTHLY") // MONTHLY (راتب شهري), DAILY (أجر يومي)
+  baseSalary   Float   @default(0)         // الراتب الأساسي أو فئة اليومية
+  department   String? // القسم التابع له (دهان، نجارة، إدارة، مبيعات...)
+  
+  canLogin    Boolean  @default(false)
+  role        String   @default("WORKER") // ADMIN, ACCOUNTANT, INVENTORY, WORKER, SALES
+  username    String?  @unique
+  password    String?
+  lastLogin   DateTime?
+  lastActive  DateTime?
+  
+  payrollRecords PayrollTransaction[]
+  attendances    Attendance[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Attendance {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  dateStr     String   // "YYYY-MM-DD" لضمان عدم تكرار اليوم
+  status      String   // PRESENT, ABSENT, LATE, LEAVE, LEAVE_SICK, LEAVE_ANNUAL, OTHER
+  checkIn     DateTime? // وقت الحضور
+  checkOut    DateTime? // وقت الانصراف
+  hoursWorked Float?    // عدد ساعات العمل (قابلة للتعديل يدوياً)
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@unique([employeeId, dateStr])
+}
+
+model PayrollTransaction {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  type        String   // SALARY (راتب), ADVANCE (سلفة), BONUS (مكافأة), PENALTY (جزاء), DAILY_WAGE (يومية)
+  amount      Float
+  date        DateTime @default(now())
+  month       Int?     // لشهر (1-12)
+  year        Int?     // لسنة
+  
+  note        String?
+  
+  // الربط المالي
+  treasuryTxId String? @unique
+  
+  createdAt   DateTime @default(now())
+}
+
+// 3- المشتريات (Purchases)
+model PurchaseInvoice {
+  id          String   @id @default(cuid())
+  invoiceNo   String   @unique
+  supplier    String?
+  date        DateTime @default(now())
+  totalAmount Float    @default(0)
+  items       PurchaseItem[]
+  createdAt   DateTime @default(now())
+}
+
+model PurchaseItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     PurchaseInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  type        String   // RAW_MATERIAL, COMPONENT
+  name        String
+  thickness   Float?
+  dimensions  String?
+  quantity    Float    // Weight or pieces
+  unitPrice   Float
+  totalPrice  Float
+}
+
+// 4- المخزن الذكي (Inventory)
+model InventoryItem {
+  id          String   @id @default(cuid())
+  type        String   // MATERIAL, FINAL_PRODUCT
+  category    String?  
+  name        String
+  stock       Float    @default(0)
+  unit        String   // kg, meter, piece
+  lastPurchasedPrice Float @default(0)
+  
+  jobMaterials JobMaterial[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 5- المنتجات (Catalog)
+model Product {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  dimensions  String?
+  height      String?
+  width       String?
+  depth       String?
+  coating     String?
+  material    String?
+  price       Float
+  stock       Int      @default(0)
+  
+  salesItems  SaleItem[]
+  manufacturingJobs ManufacturingJob[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 6- المبيعات والفواتير (Sales & Invoices)
+model Invoice {
+  id          String   @id @default(cuid())
+  invoiceNo   String   @unique
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  date        DateTime @default(now())
+  subtotal    Float
+  discountPct Float    @default(0)
+  taxPct      Float    @default(0)
+  total       Float
+  status      String   @default("UNPAID") // PAID, PARTIAL, UNPAID
+  
+  sales       SaleItem[]
+  payments    ClientPayment[]
+  manufacturingJobs ManufacturingJob[]
+  createdAt   DateTime @default(now())
+}
+
+model SaleItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Float
+  totalPrice  Float
+}
+
+// 7- الخزينة والمصروفات (Treasury & Expenses)
+model Treasury {
+  id          String   @id @default(cuid()) 
+  type        String   @unique // MAIN, BANK, etc.
+  name        String?  // Display Name
+  color       String?  // Hex Color
+  balance     Float    @default(0)
+  transactions TreasuryTransaction[]
+}
+
+model TreasuryTransaction {
+  id          String   @id @default(cuid())
+  treasuryId  String
+  treasury    Treasury @relation(fields: [treasuryId], references: [id])
+  type        String   // IN, OUT
+  amount      Float
+  channel     String   // BANK, CASH, VODAFONE
+  description String
+  refNumber   String?
+  date        DateTime @default(now())
+  
+  expenseId   String?
+  clientPaymentId String? @unique
+  createdAt   DateTime @default(now())
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  category    String   // PERIODIC, SERVICE, OTHER
+  description String
+  amount      Float
+  date        DateTime @default(now())
+  isPeriodic  Boolean  @default(false)
+  jobId       String?
+  job         ManufacturingJob? @relation(fields: [jobId], references: [id])
+}
+
+// 8- التصنيع والشغلانة (Manufacturing / Jobs - The Pulse)
+model ManufacturingJob {
+  id          String   @id @default(cuid())
+  serialNo    Int      @unique
+  name        String
+  status      String   @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  invoiceId   String?
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
+  
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id])
+  quantityProduced  Float?
+  operatingMarginPct Float?
+
+  materials   JobMaterial[]
+  expenses    Expense[]
+  
+  totalMaterialCost Float @default(0)
+  totalOperatingCost Float @default(0)
+  netProfit         Float? 
+  
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+}
+
+model JobMaterial {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         ManufacturingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  itemId      String
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+  quantity    Float    
+  unitCost    Float    
+  totalCost   Float
+}
+
+// 9- إعدادات النظام الموحدة (System Settings & Counters)
+model Setting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  updatedAt   DateTime @updatedAt
+}
+
+// 10- سجل الأحداث والأخطاء (System Logs)
+model SystemLog {
+  id        String   @id @default(cuid())
+  timestamp DateTime @default(now())
+  page      String?
+  message   String
+  user      String?
+  level     String   @default("ERROR") // ERROR, INFO, WARNING
+}

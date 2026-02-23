@@ -1,0 +1,14 @@
+{
+    "name": "stand-masr-erp-deployment",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "start": "NODE_ENV=production node server.js"
+    },
+    "dependencies": {
+        "next": "latest",
+        "react": "latest",
+        "react-dom": "latest",
+        "sharp": "^0.33.0"
+    }
+}

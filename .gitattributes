@@ -1,0 +1,47 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Standard text files
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+
+# Prisma schema
+*.prisma text eol=lf
+
+# SVG files
+*.svg text eol=lf
+
+# Config files
+.gitignore text eol=lf
+.prettierrc text eol=lf
+.eslintrc.json text eol=lf
+tsconfig.json text eol=lf
+package.json text eol=lf
+package-lock.json text eol=lf
+
+# Documentation
+LICENSE text eol=lf
+README.md text eol=lf
+
+# Binary files - these should not be modified by Git
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.db binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+*.ttf binary
+*.otf binary
