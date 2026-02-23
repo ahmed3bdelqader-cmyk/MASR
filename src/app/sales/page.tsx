@@ -93,7 +93,7 @@ export default function SalesPage() {
             {success && <div style={{ background: 'rgba(102, 187, 106, 0.2)', color: '#66bb6a', padding: '15px', borderRadius: '8px', marginBottom: '1.5rem', fontWeight: 'bold' }}>{success}</div>}
 
             <form onSubmit={handleCreateSales} className="glass-panel">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
+                <div className="responsive-grid" style={{ marginBottom: '2rem' }}>
                     <div style={{ position: 'relative' }}>
                         <label htmlFor="invNo">رقم الفاتورة (يمكنك تعديله)</label>
                         <input id="invNo" type="text" className="input-glass" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} required placeholder="INV-0001" title="رقم الفاتورة" />
@@ -109,14 +109,14 @@ export default function SalesPage() {
                 </div>
 
                 <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <h3>أصناف منتجات المبيعات (الكتالوج المتاح)</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
+                        <h3>أصناف منتجات المبيعات</h3>
                         <button type="button" onClick={() => setItems([...items, { productId: '', quantity: 1, unitPrice: 0 }])} className="btn-primary" style={{ padding: '8px 15px', fontSize: '0.9rem' }}>+ إضافة منتج للفاتورة</button>
                     </div>
 
                     {items.map((it, idx) => (
-                        <div key={idx} style={{ display: 'flex', gap: '15px', alignItems: 'end', marginBottom: '15px', background: 'rgba(0,0,0,0.1)', padding: '15px', borderRadius: '8px' }}>
-                            <div style={{ flex: 1 }}>
+                        <div key={idx} className="subfield-row">
+                            <div style={{ flex: 1, minWidth: '200px' }}>
                                 <label htmlFor={`prod-${idx}`}>المنتج المباع</label>
                                 <select id={`prod-${idx}`} className="input-glass" value={it.productId} onChange={e => handleProductChange(idx, e.target.value)} required title="اختر المنتج">
                                     <option value="">- اختر منتج -</option>
@@ -139,7 +139,7 @@ export default function SalesPage() {
                     ))}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) minmax(200px, 1fr) 2fr', gap: '2rem', borderTop: '1px solid var(--border-color)', paddingTop: '2rem', marginTop: '1rem', alignItems: 'center' }}>
+                <div className="responsive-grid" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2rem', marginTop: '1rem', alignItems: 'center' }}>
                     <div>
                         <label htmlFor="discount">نسبة الخصم التجاري (%)</label>
                         <input id="discount" type="number" className="input-glass" value={discountPct} onChange={e => setDiscountPct(parseFloat(e.target.value) || 0)} min="0" max="100" title="نسبة الخصم" />
@@ -148,7 +148,7 @@ export default function SalesPage() {
                         <label htmlFor="tax">نسبة ضريبة القيمة المضافة (%)</label>
                         <input id="tax" type="number" className="input-glass" value={taxPct} onChange={e => setTaxPct(parseFloat(e.target.value) || 0)} min="0" max="100" title="نسبة الضريبة" />
                     </div>
-                    <div style={{ textAlign: 'left' }}>
+                    <div style={{ textAlign: 'left', minWidth: '100%' }}>
                         <h2 style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '10px' }}>السعر قبل: <span style={{ color: '#ccc' }}>{subtotal.toFixed(0)} ج</span></h2>
                         <h2 style={{ color: 'var(--primary-color)', fontSize: '2rem', margin: 0 }}>الإجمالي النهائي: {total.toFixed(0)} ج.م</h2>
                     </div>

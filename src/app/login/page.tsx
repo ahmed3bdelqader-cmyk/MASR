@@ -20,7 +20,12 @@ export default function LoginPage() {
         // Load branding
         try {
             const s = JSON.parse(localStorage.getItem('erp_settings') || '{}');
-            if (s.appName) setAppName(s.appName);
+            if (s.appName) {
+                setAppName(s.appName);
+                document.title = `${s.appName} | تسجيل الدخول`;
+            } else {
+                document.title = 'Stand Masr | تسجيل الدخول';
+            }
             if (s.appLogo) setLogo(s.appLogo);
             if (s.primaryColor) setPrimaryColor(s.primaryColor);
         } catch { }
@@ -142,7 +147,7 @@ export default function LoginPage() {
                                 required
                                 title="كلمة المرور"
                                 style={{
-                                    width: '100%', padding: '0.85rem 3rem 0.85rem 1rem', background: 'rgba(0,0,0,0.3)',
+                                    width: '100%', padding: '0.85rem 1rem 0.85rem 3rem', background: 'rgba(0,0,0,0.3)',
                                     border: `1px solid ${error ? '#E35E35' : 'rgba(255,255,255,0.1)'}`,
                                     borderRadius: '10px', color: '#fff', fontFamily: 'inherit',
                                     fontSize: '1rem', boxSizing: 'border-box', outline: 'none', transition: '0.2s',

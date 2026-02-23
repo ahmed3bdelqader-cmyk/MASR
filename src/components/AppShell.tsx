@@ -52,10 +52,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return (
         <div className="app-container" style={{ display: 'flex' }}>
             {/* Mobile Overlay */}
-            <div
-                className={`mobile-menu-overlay ${mobileOpen ? 'visible' : ''}`}
-                onClick={() => setMobileOpen(false)}
-            />
+            {isMobile && mobileOpen && (
+                <div
+                    className="mobile-menu-overlay visible"
+                    onClick={() => setMobileOpen(false)}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 2000,
+                        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)'
+                    }}
+                />
+            )}
 
             {/* Sidebar Container */}
             <div style={{
@@ -130,15 +136,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </button>
                 )}
 
-                {/* Mobile Menu Button */}
+                {children}
+            </main>
+
+            {/* Mobile Menu Button - Moved outside main to avoid overlap issues */}
+            {isMobile && (
                 <button
-                    className="mobile-only"
                     onClick={() => setMobileOpen(true)}
                     style={{
                         position: 'fixed',
                         top: '15px',
                         left: '15px',
-                        zIndex: 1000,
+                        zIndex: 1999,
                         background: 'var(--primary-color)',
                         color: '#fff',
                         border: 'none',
@@ -154,9 +163,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                     <span style={{ fontSize: '1.2rem' }}>☰</span>
                 </button>
-
-                {children}
-            </main>
+            )}
         </div>
     );
 }

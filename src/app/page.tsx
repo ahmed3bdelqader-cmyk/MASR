@@ -187,8 +187,7 @@ export default function Home() {
       </header>
 
       <div style={{ padding: '0 1.5rem 1rem' }}>
-        {/* Main Stats Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem', marginBottom: '1.2rem' }}>
+        <div className="dashboard-grid" style={{ marginBottom: '1.2rem' }}>
           {/* Time & Date Card */}
           <div className="glass-panel hover-card" style={{ padding: '0.8rem 1rem', position: 'relative' }}>
             <div style={{ width: '34px', height: '34px', background: 'color-mix(in srgb, var(--primary-color), transparent 90%)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', marginBottom: '0.8rem', color: 'var(--primary-color)' }}>
@@ -282,7 +281,7 @@ export default function Home() {
                 </div>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', gridAutoFlow: 'row dense' }}>
+              <div className="shortcuts-grid">
                 {shortcuts.map((s, i) => (
                   <div key={s.id} style={{ position: 'relative', gridColumn: s.size === 'large' ? 'span 2' : 'span 1' }}>
                     <Link href={s.link} style={{ textDecoration: 'none', display: 'block', height: '100%' }}>

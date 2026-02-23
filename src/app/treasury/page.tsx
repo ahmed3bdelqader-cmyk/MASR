@@ -339,8 +339,9 @@ export default function TreasuryPage() {
                 })}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
-                <form onSubmit={handleSubmit} className="glass-panel" style={{ alignSelf: 'start' }}>
+            {/* Main Layout Area */}
+            <div className="responsive-grid" style={{ gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+                <form onSubmit={handleSubmit} className="glass-panel" style={{ alignSelf: 'start', width: '100%' }}>
                     <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>تسجيل حركة (وارد/صادر)</h3>
                     {success && <div style={{ color: '#66bb6a', marginBottom: '1rem', fontSize: '0.9rem' }}>{success}</div>}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -449,7 +450,7 @@ export default function TreasuryPage() {
                     </div>
 
                     {loading ? <p>جاري التحميل...</p> : (
-                        <div style={{ overflowX: 'auto', maxHeight: '500px' }}>
+                        <div className="table-container" style={{ maxHeight: '500px' }}>
                             <table className="table-glass">
                                 <thead>
                                     <tr>

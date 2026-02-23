@@ -366,7 +366,7 @@ export default function InventoryPage() {
                         </span>
                     </div>
 
-                    <div style={{ overflowX: 'auto' }}>
+                    <div className="table-container" style={{ maxHeight: '600px' }}>
                         <table className="table-glass">
                             <thead>
                                 <tr>
@@ -443,7 +443,7 @@ export default function InventoryPage() {
             {filter !== 'AUDIT' && (
                 <div className="glass-panel" style={{ padding: '1.5rem' }}>
                     {loading ? <p>جاري تحميل المخزن...</p> : (
-                        <div style={{ overflowX: 'auto' }}>
+                        <div className="table-container">
                             <table className="table-glass">
                                 <thead>
                                     <tr>
