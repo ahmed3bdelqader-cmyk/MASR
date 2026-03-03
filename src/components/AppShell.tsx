@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
-import { usePathname } from 'next/navigation';
-import { Clock, Wallet, Menu, ChevronLeft, ChevronRight, Home } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Clock, Wallet, Menu, ChevronLeft, ChevronRight, Home, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 
 const NO_SIDEBAR_PATHS = ['/login'];
@@ -11,6 +11,7 @@ const UNIFIED_SIDEBAR_CLOSED = 80;
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
+    const router = useRouter();
     const [collapsed, setCollapsed] = React.useState(false);
     const [mobileOpen, setMobileOpen] = React.useState(false);
     const [isMobile, setIsMobile] = React.useState(false);
@@ -215,6 +216,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                     <Wallet size={16} strokeWidth={2} /> <span>المصروفات</span>
                 </button>
+                <div className="dock-divider"></div>
+                <button
+                    aria-label="تسجيل الخروج"
+                    onClick={() => {
+                        localStorage.removeItem('erp_logged_in');
+                        localStorage.removeItem('erp_login_time');
+                        localStorage.removeItem('erp_user');
+                        router.push('/login');
+                    }}
+                    className="dock-btn dock-btn-logout"
+                    title="تسجيل الخروج"
+                >
+                    <LogOut size={16} strokeWidth={2} /> <span>خروج</span>
+                </button>
             </div>
 
 
@@ -310,6 +325,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     background: rgba(255, 183, 77, 0.15);
                     color: #ffb74d;
                     box-shadow: 0 0 15px rgba(255, 183, 77, 0.2);
+                }
+                
+                .dock-btn-logout {
+                    color: #ef9a9a;
+                }
+                .dock-btn-logout:hover {
+                    background: rgba(239, 68, 68, 0.15);
+                    color: #ef4444;
+                    box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
                 }
 
                 .sidebar-edge-toggle {

@@ -1,9 +1,9 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
-import { Home, Users, Receipt, FileText, Factory, Paintbrush, Package, Truck, Wrench, Tags, Wallet, UserCircle, BarChart3, Stamp, Shield, Database, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, Users, Receipt, FileText, Factory, Paintbrush, Package, Truck, Wrench, Tags, Wallet, UserCircle, BarChart3, Stamp, Shield, Database, Settings, LogOut } from 'lucide-react';
 
 const menuItems = [
     { label: 'الرئيسية', icon: <Home size={24} strokeWidth={1.5} />, path: '/', roles: ['ADMIN', 'ACCOUNTANT', 'INVENTORY', 'SALES', 'WORKER'] },
@@ -40,6 +40,7 @@ export default function Sidebar({ isCollapsed, onToggle, isMobile, onMobileClose
     onLinkClick?: () => void;
 }) {
     const pathname = usePathname();
+    const router = useRouter();
     const [appName, setAppName] = useState('Stand Masr');
     const [logo, setLogo] = useState('');
     const [logoSize, setLogoSize] = useState('44');
@@ -133,7 +134,8 @@ export default function Sidebar({ isCollapsed, onToggle, isMobile, onMobileClose
     const handleLogout = () => {
         localStorage.removeItem('erp_logged_in');
         localStorage.removeItem('erp_login_time');
-        window.location.href = '/login';
+        localStorage.removeItem('erp_user');
+        router.push('/login');
     };
 
     const checkPermission = (item: typeof menuItems[0]) => {
@@ -309,6 +311,58 @@ export default function Sidebar({ isCollapsed, onToggle, isMobile, onMobileClose
                 )}
             </nav>
 
-        </aside >
+            {/* ── Bottom: User Info + Logout ─────────────────────────────────── */}
+            <div style={{
+                borderTop: '1px solid rgba(255,255,255,0.06)',
+                padding: isCollapsed ? '12px 8px' : '12px 16px',
+                display: 'flex',
+                flexDirection: isCollapsed ? 'column' : 'row',
+                alignItems: 'center',
+                gap: '10px',
+                marginTop: 'auto',
+            }}>
+                {/* User Info */}
+                {!isCollapsed && (
+                    <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--sidebar-text, rgba(255,255,255,0.85))', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {userName || 'المستخدم'}
+                        </p>
+                        <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--primary-color)', fontWeight: 600 }}>
+                            {userRole === 'ADMIN' ? '👑 مدير النظام' : userRole === 'ACCOUNTANT' ? '💼 محاسب' : userRole === 'INVENTORY' ? '📦 مخزن' : userRole === 'SALES' ? '🛒 مبيعات' : '👷 موظف'}
+                        </p>
+                    </div>
+                )}
+
+                {/* Logout Button */}
+                <button
+                    onClick={handleLogout}
+                    title="تسجيل الخروج"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: isCollapsed ? '0' : '8px',
+                        padding: isCollapsed ? '10px' : '8px 14px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(239,68,68,0.25)',
+                        background: 'rgba(239,68,68,0.08)',
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                        transition: 'all 0.2s',
+                        flexShrink: 0,
+                        width: isCollapsed ? '42px' : 'auto',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.18)'; (e.currentTarget as HTMLElement).style.borderColor = '#ef4444'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.08)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(239,68,68,0.25)'; }}
+                >
+                    <LogOut size={16} />
+                    {!isCollapsed && <span>تسجيل الخروج</span>}
+                </button>
+            </div>
+
+        </aside>
     );
 }

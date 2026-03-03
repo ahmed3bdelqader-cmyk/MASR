@@ -26,7 +26,16 @@ export default function LoginPage() {
             } else {
                 document.title = 'Stand Masr | تسجيل الدخول';
             }
-            if (s.appLogo) setLogo(s.appLogo);
+            if (s.appLogo) {
+                setLogo(s.appLogo);
+                // Update favicon
+                document.querySelectorAll("link[rel~='icon']").forEach(el => el.remove());
+                const favLink = document.createElement('link');
+                favLink.rel = 'icon';
+                favLink.type = 'image/png';
+                favLink.href = s.appLogo;
+                document.head.appendChild(favLink);
+            }
             if (s.primaryColor) setPrimaryColor(s.primaryColor);
         } catch { }
     }, []);

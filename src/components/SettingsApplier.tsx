@@ -32,6 +32,18 @@ export default function SettingsApplier() {
             if (s.fontSize) document.body.style.fontSize = (Number(s.fontSize) / 100) * 16 + 'px';
             if (s.appName) document.title = s.appName + ' | ERP';
 
+            // ── Dynamic Favicon from uploaded logo ─────────────────────────
+            if (s.appLogo) {
+                // Remove any existing favicon links
+                document.querySelectorAll("link[rel~='icon']").forEach(el => el.remove());
+                // Create new favicon link
+                const faviconLink = document.createElement('link');
+                faviconLink.rel = 'icon';
+                faviconLink.type = 'image/png';
+                faviconLink.href = s.appLogo;
+                document.head.appendChild(faviconLink);
+            }
+
             // ── Logo shape → CSS variable ──────────────────────────────────
             const radius = SHAPE_RADIUS[s.logoShape || 'rounded'] || '12px';
             root.style.setProperty('--logo-radius', radius);
