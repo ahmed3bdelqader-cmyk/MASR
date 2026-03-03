@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 4000",
-    "prebuild": "rm -rf .next || true",
+    "prebuild": "rimraf .next",
     "build": "prisma generate && next build",
     "start": "next start -H 0.0.0.0 -p 4000",
     "bundle": "powershell -ExecutionPolicy Bypass -File bundle-single.ps1"
@@ -40,6 +40,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.27",
+    "cross-env": "^10.1.0",
     "eslint": "^8",
     "eslint-config-next": "14.2.0",
     "postcss": "^8.5.6",
