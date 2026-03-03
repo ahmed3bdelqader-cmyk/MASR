@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 4000",
-    "prebuild": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\"",
-    "build": "prisma generate && next build",
-    "build:skip": "node -e \"console.log('Skipping build - .next already exists')\"",
+    "prebuild": "node -e \"if(process.env.NODE_ENV!=='production'){require('fs').rmSync('.next',{recursive:true,force:true})}\"",
+    "build": "prisma generate",
+    "build:full": "prisma generate && next build",
     "start": "next start -H 0.0.0.0 -p 4000",
     "bundle": "powershell -ExecutionPolicy Bypass -File bundle-single.ps1"
   },
