@@ -1,0 +1,108 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-03-03T05:44:16.594Z",
+  "data": {
+    "clients": [],
+    "clientPayments": [],
+    "employees": [],
+    "attendances": [],
+    "payrolls": [],
+    "purchases": [],
+    "purchaseItems": [],
+    "inventory": [],
+    "products": [],
+    "invoices": [],
+    "saleItems": [],
+    "treasuries": [],
+    "treasuryTxs": [],
+    "expenses": [],
+    "jobs": [],
+    "jobMaterials": [],
+    "settings": [
+      {
+        "id": "cmm9q40y7000uo1ysto1cfput",
+        "key": "invoicePrefix",
+        "value": "INV",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y7000vo1ys1l00xsmi",
+        "key": "purchasePrefix",
+        "value": "PUR",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y7000wo1yszqmxuucc",
+        "key": "salesInvoiceCounter",
+        "value": "0",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y7000xo1ysd8rn4z98",
+        "key": "purchaseInvoiceCounter",
+        "value": "0",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y7000yo1ysomrqc9vu",
+        "key": "currency",
+        "value": "EGP",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y8000zo1ysebqnzuq6",
+        "key": "currencySymbol",
+        "value": "ج.م",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y80010o1ys1fi7gjms",
+        "key": "primaryColor",
+        "value": "#e1f5fe",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y80011o1ysa6hv44mw",
+        "key": "bgColor",
+        "value": "#010f14",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y80012o1ys6lopg7kj",
+        "key": "appName",
+        "value": "Stand Masr ERP",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y80013o1ysrfuhzfgc",
+        "key": "fontFamily",
+        "value": "'Cairo', sans-serif",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y80014o1ysi74zhtbk",
+        "key": "borderRadius",
+        "value": "15",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y80015o1ysg46n4a00",
+        "key": "glassBg",
+        "value": "85",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y80016o1ysajcr2nfy",
+        "key": "cardShadow",
+        "value": "0 0 15px rgba(79,195,247,0.1)",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      },
+      {
+        "id": "cmm9q40y90017o1yssjfvfh8o",
+        "key": "cardHoverShadow",
+        "value": "0 0 30px rgba(79,195,247,0.3)",
+        "updatedAt": "2026-03-02T23:48:31.425Z"
+      }
+    ]
+  }
+}

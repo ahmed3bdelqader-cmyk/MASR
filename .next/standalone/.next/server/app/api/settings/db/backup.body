@@ -1,0 +1,831 @@
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Attendance
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Attendance` (
+  `id` varchar(191) NOT NULL,
+  `employeeId` varchar(191) NOT NULL,
+  `dateStr` varchar(191) NOT NULL,
+  `status` varchar(191) NOT NULL,
+  `checkIn` datetime(3) DEFAULT NULL,
+  `checkOut` datetime(3) DEFAULT NULL,
+  `hoursWorked` double DEFAULT NULL,
+  `note` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Attendance_employeeId_dateStr_key` (`employeeId`, `dateStr`),
+  CONSTRAINT `Attendance_employeeId_fkey` FOREIGN KEY (`employeeId`) REFERENCES `Employee` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Client
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Client` (
+  `id` varchar(191) NOT NULL,
+  `serial` int(11) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  `storeName` varchar(191) DEFAULT NULL,
+  `address` varchar(191) DEFAULT NULL,
+  `email` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updatedAt` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Client_serial_key` (`serial`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: ClientPayment
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `ClientPayment` (
+  `id` varchar(191) NOT NULL,
+  `amount` double NOT NULL,
+  `paymentDate` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `method` varchar(191) NOT NULL,
+  `clientId` varchar(191) NOT NULL,
+  `invoiceId` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  KEY `ClientPayment_clientId_fkey` (`clientId`),
+  KEY `ClientPayment_invoiceId_fkey` (`invoiceId`),
+  CONSTRAINT `ClientPayment_clientId_fkey` FOREIGN KEY (`clientId`) REFERENCES `Client` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `ClientPayment_invoiceId_fkey` FOREIGN KEY (`invoiceId`) REFERENCES `Invoice` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: ContactPhone
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `ContactPhone` (
+  `id` varchar(191) NOT NULL,
+  `phone` varchar(191) NOT NULL,
+  `isPrimaryWhatsApp` tinyint(1) NOT NULL DEFAULT 0,
+  `clientId` varchar(191) DEFAULT NULL,
+  `supplierId` varchar(191) DEFAULT NULL,
+  `employeeId` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  KEY `ContactPhone_clientId_fkey` (`clientId`),
+  KEY `ContactPhone_supplierId_fkey` (`supplierId`),
+  KEY `ContactPhone_employeeId_fkey` (`employeeId`),
+  CONSTRAINT `ContactPhone_clientId_fkey` FOREIGN KEY (`clientId`) REFERENCES `Client` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `ContactPhone_employeeId_fkey` FOREIGN KEY (`employeeId`) REFERENCES `Employee` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `ContactPhone_supplierId_fkey` FOREIGN KEY (`supplierId`) REFERENCES `Supplier` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Employee
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Employee` (
+  `id` varchar(191) NOT NULL,
+  `employeeId` int(11) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  `title` varchar(191) NOT NULL,
+  `qualification` varchar(191) DEFAULT NULL,
+  `age` int(11) DEFAULT NULL,
+  `address` varchar(191) DEFAULT NULL,
+  `nationalId` varchar(191) DEFAULT NULL,
+  `hireDate` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `contractType` varchar(191) NOT NULL DEFAULT 'MONTHLY',
+  `baseSalary` double NOT NULL DEFAULT 0,
+  `department` varchar(191) DEFAULT NULL,
+  `canLogin` tinyint(1) NOT NULL DEFAULT 0,
+  `role` varchar(191) NOT NULL DEFAULT 'WORKER',
+  `username` varchar(191) DEFAULT NULL,
+  `password` varchar(191) DEFAULT NULL,
+  `lastLogin` datetime(3) DEFAULT NULL,
+  `lastActive` datetime(3) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updatedAt` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Employee_employeeId_key` (`employeeId`),
+  UNIQUE KEY `Employee_username_key` (`username`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Expense
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Expense` (
+  `id` varchar(191) NOT NULL,
+  `category` varchar(191) NOT NULL,
+  `description` varchar(191) NOT NULL,
+  `amount` double NOT NULL,
+  `date` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `isPeriodic` tinyint(1) NOT NULL DEFAULT 0,
+  `jobId` varchar(191) DEFAULT NULL,
+  `supplierId` varchar(191) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `Expense_jobId_fkey` (`jobId`),
+  KEY `Expense_supplierId_fkey` (`supplierId`),
+  CONSTRAINT `Expense_jobId_fkey` FOREIGN KEY (`jobId`) REFERENCES `ManufacturingJob` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE,
+  CONSTRAINT `Expense_supplierId_fkey` FOREIGN KEY (`supplierId`) REFERENCES `Supplier` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: ExpenseCategory
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `ExpenseCategory` (
+  `id` varchar(191) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ExpenseCategory_name_key` (`name`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: ExpenseTransaction
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `ExpenseTransaction` (
+  `id` varchar(191) NOT NULL,
+  `categoryId` varchar(191) NOT NULL,
+  `amount` double NOT NULL,
+  `description` varchar(191) NOT NULL,
+  `date` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `treasuryTxId` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ExpenseTransaction_treasuryTxId_key` (`treasuryTxId`),
+  KEY `ExpenseTransaction_categoryId_fkey` (`categoryId`),
+  CONSTRAINT `ExpenseTransaction_categoryId_fkey` FOREIGN KEY (`categoryId`) REFERENCES `ExpenseCategory` (`id`) ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: InventoryItem
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `InventoryItem` (
+  `id` varchar(191) NOT NULL,
+  `type` varchar(191) NOT NULL,
+  `category` varchar(191) DEFAULT NULL,
+  `name` varchar(191) NOT NULL,
+  `stock` double NOT NULL DEFAULT 0,
+  `unit` varchar(191) NOT NULL,
+  `lastPurchasedPrice` double NOT NULL DEFAULT 0,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updatedAt` datetime(3) NOT NULL,
+  `mainCategoryId` varchar(191) DEFAULT NULL,
+  `minStockLevel` double NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `InventoryItem_mainCategoryId_fkey` (`mainCategoryId`),
+  CONSTRAINT `InventoryItem_mainCategoryId_fkey` FOREIGN KEY (`mainCategoryId`) REFERENCES `MainCategory` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Invoice
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Invoice` (
+  `id` varchar(191) NOT NULL,
+  `invoiceNo` varchar(191) NOT NULL,
+  `clientId` varchar(191) NOT NULL,
+  `date` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `subtotal` double NOT NULL,
+  `discountPct` double NOT NULL DEFAULT 0,
+  `taxPct` double NOT NULL DEFAULT 0,
+  `total` double NOT NULL,
+  `status` varchar(191) NOT NULL DEFAULT 'UNPAID',
+  `invoiceNumber` varchar(191) DEFAULT NULL,
+  `invoiceDate` datetime(3) DEFAULT NULL,
+  `documentStatus` varchar(191) NOT NULL DEFAULT 'POSTED',
+  `attachmentPath` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Invoice_invoiceNo_key` (`invoiceNo`),
+  KEY `Invoice_clientId_fkey` (`clientId`),
+  CONSTRAINT `Invoice_clientId_fkey` FOREIGN KEY (`clientId`) REFERENCES `Client` (`id`) ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: JobMaterial
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `JobMaterial` (
+  `id` varchar(191) NOT NULL,
+  `jobId` varchar(191) NOT NULL,
+  `itemId` varchar(191) NOT NULL,
+  `quantity` double NOT NULL,
+  `unitCost` double NOT NULL,
+  `totalCost` double NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `JobMaterial_jobId_fkey` (`jobId`),
+  KEY `JobMaterial_itemId_fkey` (`itemId`),
+  CONSTRAINT `JobMaterial_itemId_fkey` FOREIGN KEY (`itemId`) REFERENCES `InventoryItem` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `JobMaterial_jobId_fkey` FOREIGN KEY (`jobId`) REFERENCES `ManufacturingJob` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: MainCategory
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `MainCategory` (
+  `id` varchar(191) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  `formType` varchar(191) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `MainCategory_name_key` (`name`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: ManufacturingJob
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `ManufacturingJob` (
+  `id` varchar(191) NOT NULL,
+  `serialNo` int(11) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  `status` varchar(191) NOT NULL DEFAULT 'PENDING',
+  `stage` varchar(191) DEFAULT NULL,
+  `invoiceId` varchar(191) DEFAULT NULL,
+  `productId` varchar(191) DEFAULT NULL,
+  `quantityProduced` double DEFAULT NULL,
+  `operatingMarginPct` double DEFAULT NULL,
+  `totalMaterialCost` double NOT NULL DEFAULT 0,
+  `totalOperatingCost` double NOT NULL DEFAULT 0,
+  `paintCostTotal` double NOT NULL DEFAULT 0,
+  `netProfit` double DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `completedAt` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ManufacturingJob_serialNo_key` (`serialNo`),
+  KEY `ManufacturingJob_invoiceId_fkey` (`invoiceId`),
+  KEY `ManufacturingJob_productId_fkey` (`productId`),
+  CONSTRAINT `ManufacturingJob_invoiceId_fkey` FOREIGN KEY (`invoiceId`) REFERENCES `Invoice` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE,
+  CONSTRAINT `ManufacturingJob_productId_fkey` FOREIGN KEY (`productId`) REFERENCES `Product` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: PaintEntry
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `PaintEntry` (
+  `id` varchar(191) NOT NULL,
+  `jobId` varchar(191) NOT NULL,
+  `supplierId` varchar(191) DEFAULT NULL,
+  `productName` varchar(191) NOT NULL,
+  `quantity` double NOT NULL DEFAULT 1,
+  `color` varchar(191) DEFAULT NULL,
+  `colorCode` varchar(191) DEFAULT NULL,
+  `unitPrice` double NOT NULL,
+  `totalCost` double NOT NULL,
+  `status` varchar(191) NOT NULL DEFAULT 'PENDING_PAYMENT',
+  `paidAt` datetime(3) DEFAULT NULL,
+  `expenseId` varchar(191) DEFAULT NULL,
+  `treasuryTxId` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  KEY `PaintEntry_jobId_fkey` (`jobId`),
+  KEY `PaintEntry_supplierId_fkey` (`supplierId`),
+  CONSTRAINT `PaintEntry_jobId_fkey` FOREIGN KEY (`jobId`) REFERENCES `ManufacturingJob` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `PaintEntry_supplierId_fkey` FOREIGN KEY (`supplierId`) REFERENCES `Supplier` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: PaintPricingItem
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `PaintPricingItem` (
+  `id` varchar(191) NOT NULL,
+  `description` varchar(191) NOT NULL,
+  `price` double NOT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updatedAt` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `PaintPricingItem_description_key` (`description`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: PayrollTransaction
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `PayrollTransaction` (
+  `id` varchar(191) NOT NULL,
+  `employeeId` varchar(191) NOT NULL,
+  `type` varchar(191) NOT NULL,
+  `amount` double NOT NULL,
+  `date` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `month` int(11) DEFAULT NULL,
+  `year` int(11) DEFAULT NULL,
+  `note` varchar(191) DEFAULT NULL,
+  `treasuryTxId` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `PayrollTransaction_treasuryTxId_key` (`treasuryTxId`),
+  KEY `PayrollTransaction_employeeId_fkey` (`employeeId`),
+  CONSTRAINT `PayrollTransaction_employeeId_fkey` FOREIGN KEY (`employeeId`) REFERENCES `Employee` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Product
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Product` (
+  `id` varchar(191) NOT NULL,
+  `code` varchar(191) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  `description` varchar(191) DEFAULT NULL,
+  `dimensions` varchar(191) DEFAULT NULL,
+  `height` varchar(191) DEFAULT NULL,
+  `width` varchar(191) DEFAULT NULL,
+  `depth` varchar(191) DEFAULT NULL,
+  `coating` varchar(191) DEFAULT NULL,
+  `material` varchar(191) DEFAULT NULL,
+  `price` double NOT NULL,
+  `stock` int(11) NOT NULL DEFAULT 0,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updatedAt` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Product_code_key` (`code`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: PurchaseInvoice
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `PurchaseInvoice` (
+  `id` varchar(191) NOT NULL,
+  `invoiceNo` varchar(191) NOT NULL,
+  `supplier` varchar(191) DEFAULT NULL,
+  `supplierId` varchar(191) DEFAULT NULL,
+  `date` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `invoiceNumber` varchar(191) DEFAULT NULL,
+  `invoiceDate` datetime(3) DEFAULT NULL,
+  `documentStatus` varchar(191) NOT NULL DEFAULT 'POSTED',
+  `totalAmount` double NOT NULL DEFAULT 0,
+  `attachmentPath` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `PurchaseInvoice_invoiceNo_key` (`invoiceNo`),
+  KEY `PurchaseInvoice_supplierId_fkey` (`supplierId`),
+  CONSTRAINT `PurchaseInvoice_supplierId_fkey` FOREIGN KEY (`supplierId`) REFERENCES `Supplier` (`id`) ON DELETE
+  SET
+  NULL ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: PurchaseItem
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `PurchaseItem` (
+  `id` varchar(191) NOT NULL,
+  `invoiceId` varchar(191) NOT NULL,
+  `type` varchar(191) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  `thickness` double DEFAULT NULL,
+  `dimensions` varchar(191) DEFAULT NULL,
+  `quantity` double NOT NULL,
+  `unitPrice` double NOT NULL,
+  `totalPrice` double NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `PurchaseItem_invoiceId_fkey` (`invoiceId`),
+  CONSTRAINT `PurchaseItem_invoiceId_fkey` FOREIGN KEY (`invoiceId`) REFERENCES `PurchaseInvoice` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: SaleItem
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `SaleItem` (
+  `id` varchar(191) NOT NULL,
+  `invoiceId` varchar(191) NOT NULL,
+  `productId` varchar(191) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `unitPrice` double NOT NULL,
+  `totalPrice` double NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `SaleItem_invoiceId_fkey` (`invoiceId`),
+  KEY `SaleItem_productId_fkey` (`productId`),
+  CONSTRAINT `SaleItem_invoiceId_fkey` FOREIGN KEY (`invoiceId`) REFERENCES `Invoice` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `SaleItem_productId_fkey` FOREIGN KEY (`productId`) REFERENCES `Product` (`id`) ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Setting
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Setting` (
+  `id` varchar(191) NOT NULL,
+  `key` varchar(191) NOT NULL,
+  `value` varchar(191) NOT NULL,
+  `updatedAt` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Setting_key_key` (`key`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Supplier
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Supplier` (
+  `id` varchar(191) NOT NULL,
+  `name` varchar(191) NOT NULL,
+  `type` varchar(191) NOT NULL DEFAULT 'MATERIAL',
+  `address` varchar(191) DEFAULT NULL,
+  `balance` double NOT NULL DEFAULT 0,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updatedAt` datetime(3) NOT NULL,
+  `serial` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Supplier_serial_key` (`serial`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: SupplierPayment
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `SupplierPayment` (
+  `id` varchar(191) NOT NULL,
+  `amount` double NOT NULL,
+  `date` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `method` varchar(191) NOT NULL,
+  `supplierId` varchar(191) NOT NULL,
+  `treasuryTxId` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `SupplierPayment_treasuryTxId_key` (`treasuryTxId`),
+  KEY `SupplierPayment_supplierId_fkey` (`supplierId`),
+  CONSTRAINT `SupplierPayment_supplierId_fkey` FOREIGN KEY (`supplierId`) REFERENCES `Supplier` (`id`) ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: SystemLog
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `SystemLog` (
+  `id` varchar(191) NOT NULL,
+  `timestamp` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `page` varchar(191) DEFAULT NULL,
+  `message` varchar(191) NOT NULL,
+  `user` varchar(191) DEFAULT NULL,
+  `level` varchar(191) NOT NULL DEFAULT 'ERROR',
+  PRIMARY KEY (`id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: SystemSettings
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `SystemSettings` (
+  `id` varchar(191) NOT NULL,
+  `ai_api_key` varchar(191) DEFAULT NULL,
+  `updatedAt` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: Treasury
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `Treasury` (
+  `id` varchar(191) NOT NULL,
+  `type` varchar(191) NOT NULL,
+  `name` varchar(191) DEFAULT NULL,
+  `color` varchar(191) DEFAULT NULL,
+  `balance` double NOT NULL DEFAULT 0,
+  `bankId` varchar(191) DEFAULT NULL,
+  `logoPath` varchar(191) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `Treasury_type_key` (`type`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: TreasuryTransaction
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `TreasuryTransaction` (
+  `id` varchar(191) NOT NULL,
+  `treasuryId` varchar(191) NOT NULL,
+  `type` varchar(191) NOT NULL,
+  `amount` double NOT NULL,
+  `channel` varchar(191) NOT NULL,
+  `description` varchar(191) NOT NULL,
+  `refNumber` varchar(191) DEFAULT NULL,
+  `date` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `expenseId` varchar(191) DEFAULT NULL,
+  `clientPaymentId` varchar(191) DEFAULT NULL,
+  `createdAt` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `TreasuryTransaction_clientPaymentId_key` (`clientPaymentId`),
+  KEY `TreasuryTransaction_treasuryId_fkey` (`treasuryId`),
+  CONSTRAINT `TreasuryTransaction_treasuryId_fkey` FOREIGN KEY (`treasuryId`) REFERENCES `Treasury` (`id`) ON UPDATE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# SCHEMA DUMP FOR TABLE: WhatsAppTemplate
+# ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `WhatsAppTemplate` (
+  `id` varchar(191) NOT NULL,
+  `type` varchar(191) NOT NULL,
+  `message` text NOT NULL,
+  `active` tinyint(1) NOT NULL DEFAULT 1,
+  `updatedAt` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `WhatsAppTemplate_type_key` (`type`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Attendance
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Client
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: ClientPayment
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: ContactPhone
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Employee
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Expense
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: ExpenseCategory
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: ExpenseTransaction
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: InventoryItem
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Invoice
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: JobMaterial
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: MainCategory
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: ManufacturingJob
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: PaintEntry
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: PaintPricingItem
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: PayrollTransaction
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Product
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: PurchaseInvoice
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: PurchaseItem
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: SaleItem
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Setting
+# ------------------------------------------------------------
+
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y7000uo1ysto1cfput',
+    'invoicePrefix',
+    'INV',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y7000vo1ys1l00xsmi',
+    'purchasePrefix',
+    'PUR',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y7000wo1yszqmxuucc',
+    'salesInvoiceCounter',
+    '0',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y7000xo1ysd8rn4z98',
+    'purchaseInvoiceCounter',
+    '0',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y7000yo1ysomrqc9vu',
+    'currency',
+    'EGP',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y8000zo1ysebqnzuq6',
+    'currencySymbol',
+    'ج.م',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y80010o1ys1fi7gjms',
+    'primaryColor',
+    '#e1f5fe',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y80011o1ysa6hv44mw',
+    'bgColor',
+    '#010f14',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y80012o1ys6lopg7kj',
+    'appName',
+    'Stand Masr ERP',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y80013o1ysrfuhzfgc',
+    'fontFamily',
+    '\'Cairo\', sans-serif',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y80014o1ysi74zhtbk',
+    'borderRadius',
+    '15',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y80015o1ysg46n4a00',
+    'glassBg',
+    '85',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y80016o1ysajcr2nfy',
+    'cardShadow',
+    '0 0 15px rgba(79,195,247,0.1)',
+    '2026-03-02 23:48:31.425'
+  );
+INSERT INTO
+  `Setting` (`id`, `key`, `value`, `updatedAt`)
+VALUES
+  (
+    'cmm9q40y90017o1yssjfvfh8o',
+    'cardHoverShadow',
+    '0 0 30px rgba(79,195,247,0.3)',
+    '2026-03-02 23:48:31.425'
+  );
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Supplier
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: SupplierPayment
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: SystemLog
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: SystemSettings
+# ------------------------------------------------------------
+
+INSERT INTO
+  `SystemSettings` (`id`, `ai_api_key`, `updatedAt`)
+VALUES
+  (
+    'cmm9q43tt0018o1ys9vckrld8',
+    NULL,
+    '2026-03-02 23:48:34.272'
+  );
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: Treasury
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: TreasuryTransaction
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# DATA DUMP FOR TABLE: WhatsAppTemplate
+# ------------------------------------------------------------
+
+
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

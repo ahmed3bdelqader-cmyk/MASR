@@ -12,7 +12,7 @@ test-*.ts
 *.test.ts
 
 # next.js
-.next/
+# .next/ -- included in git for deployment (server cannot build)
 /out/
 
 # production
