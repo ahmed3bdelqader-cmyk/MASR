@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
 
 type InventoryItem = {
     id: string; type: string; category: string | null;
@@ -21,6 +22,7 @@ const TABS = [
 export default function InventoryPage() {
     const [items, setItems] = useState<InventoryItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [mounted, setMounted] = useState(false);
     const [filter, setFilter] = useState('ALL');
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -35,17 +37,62 @@ export default function InventoryPage() {
     const [showAlerts, setShowAlerts] = useState(true);
     const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
-    // Load alert thresholds from localStorage
-    useEffect(() => {
-        try {
-            const saved = localStorage.getItem('erp_stock_alerts');
-            if (saved) setAlertThresholds(JSON.parse(saved));
-        } catch { }
-    }, []);
-
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
-    const pageSize = 15;
+    const [pageSize, setPageSize] = useState<'ALL' | number>(5);
+
+    // ── Categories & Workshop Items config ───────────────────────────────────
+    const DEFAULT_INVENTORY_CATS = [
+        { key: 'FASTENERS', label: '🔩 مسامير ولحامات', color: '#a1887f' },
+        { key: 'PAINT', label: '🎨 دهانات وتشطيب', color: '#ce93d8' },
+        { key: 'LOCKS', label: '🔐 أقفال ومفصلات', color: '#80cbc4' },
+        { key: 'GLASS', label: '🗻 زجاج ولوحات', color: '#81d4fa' },
+        { key: 'CABLES', label: '📱 كابلات وأسلاك', color: '#ffcc80' },
+        { key: 'ACCESSORIES', label: '✨ إكسيسوارات', color: '#f48fb1' },
+        { key: 'OTHER', label: '📦 مستلزمات عامة', color: '#aaa' }
+    ];
+    const [showCatMgr, setShowCatMgr] = useState(false);
+    const [inventoryCategories, setInventoryCategories] = useState(DEFAULT_INVENTORY_CATS);
+    const [catForm, setCatForm] = useState({ label: '', color: '#ffcc80' });
+    const [wsForm, setWsForm] = useState({ subcategory: 'FASTENERS', name: '', unit: 'قطعة', defaultPrice: '' });
+
+    const handleAddCategory = () => {
+        if (!catForm.label.trim()) return;
+        const newCats = [...inventoryCategories, { key: 'CAT_' + Date.now(), label: catForm.label.trim(), color: catForm.color }];
+        setInventoryCategories(newCats);
+        localStorage.setItem('erp_inventory_categories', JSON.stringify(newCats));
+        setCatForm({ label: '', color: '#ffcc80' });
+    };
+    const handleDeleteCategory = (key: string) => {
+        if (!confirm('سيتم حذف القسم فقط من القائمة ولن تُحذف الأصناف المرتبطة به. هل أنت متأكد؟')) return;
+        const newCats = inventoryCategories.filter(c => c.key !== key);
+        setInventoryCategories(newCats);
+        localStorage.setItem('erp_inventory_categories', JSON.stringify(newCats));
+    };
+    const handleEditCategoryName = (key: string) => {
+        const newName = prompt('اكتب الاسم الجديد للقسم:');
+        if (newName && newName.trim()) {
+            const newCats = inventoryCategories.map(c => c.key === key ? { ...c, label: newName.trim() } : c);
+            setInventoryCategories(newCats);
+            localStorage.setItem('erp_inventory_categories', JSON.stringify(newCats));
+        }
+    };
+    const wsAddItem = async () => {
+        if (!wsForm.name.trim()) return;
+        const subLabel = inventoryCategories.find(c => c.key === wsForm.subcategory)?.label || 'مستلزمات عامة';
+        setSaving(true);
+        const res = await fetch('/api/inventory', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'MATERIAL', category: subLabel, name: wsForm.name.trim(), stock: '0', unit: wsForm.unit })
+        });
+        if (res.ok) {
+            setWsForm(f => ({ ...f, name: '', defaultPrice: '' }));
+            fetchInventory();
+        } else {
+            alert('حدث خطأ أثناء إضافة الصنف');
+        }
+        setSaving(false);
+    };
 
     // ── Audit filter state ─────────────────────────────────────────────────────
     const [auditSearch, setAuditSearch] = useState('');
@@ -61,7 +108,13 @@ export default function InventoryPage() {
         } catch { setItems([]); }
         setLoading(false);
     };
-    useEffect(() => { fetchInventory(); }, []);
+    useEffect(() => {
+        setMounted(true);
+        fetchInventory();
+        const saved = localStorage.getItem('erp_inventory_pageSize');
+        if (saved) setPageSize(saved === 'ALL' ? 'ALL' : parseInt(saved, 10));
+        try { const c = localStorage.getItem('erp_inventory_categories'); if (c) { const parsed = JSON.parse(c); if (parsed.length) setInventoryCategories(parsed); } } catch { }
+    }, []);
 
     const openEdit = (item: InventoryItem) => {
         setEditItem(item);
@@ -98,6 +151,108 @@ export default function InventoryPage() {
         if (res.ok) { setShowAdd(false); setAddForm({ name: '', stock: '', unit: 'قطعة', category: '', type: 'MATERIAL' }); fetchInventory(); }
     };
 
+    const handlePageSizeChange = (val: string) => {
+        const newSize = val === 'ALL' ? 'ALL' : parseInt(val, 10);
+        setPageSize(newSize);
+        localStorage.setItem('erp_inventory_pageSize', val);
+        setCurrentPage(1);
+    };
+
+    const exportToCSV = () => {
+        const headers = ['اسم الصنف', 'النوع', 'التصنيف', 'الكمية', 'الوحدة', 'آخر سعر شراء'];
+        const rows = items.map(i => [
+            i.name,
+            i.type === 'FINAL_PRODUCT' ? 'منتج نهائي' : 'خامة/مستلزم',
+            i.category || '',
+            i.stock,
+            i.unit,
+            i.lastPurchasedPrice || 0
+        ]);
+        let csvContent = "\uFEFF"; // UTF-8 BOM
+        csvContent += headers.join(",") + "\n";
+        rows.forEach(row => {
+            const escapedRow = row.map(val => {
+                const s = String(val).replace(/"/g, '""');
+                return `"${s}"`;
+            });
+            csvContent += escapedRow.join(",") + "\n";
+        });
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `مخزون_ستاند_مصر_${new Date().toLocaleDateString('ar-EG').replace(/\//g, '-')}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const text = event.target?.result as string;
+                const lines = text.split(/\r?\n/);
+                if (lines.length < 2) return;
+                const importItems = [];
+                const parseCSVLine = (line: string) => {
+                    const result = [];
+                    let cur = '';
+                    let inQuotes = false;
+                    for (let i = 0; i < line.length; i++) {
+                        const char = line[i];
+                        if (char === '"') inQuotes = !inQuotes;
+                        else if (char === ',' && !inQuotes) {
+                            result.push(cur.trim());
+                            cur = '';
+                        } else cur += char;
+                    }
+                    result.push(cur.trim());
+                    return result;
+                };
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+                    const cells = parseCSVLine(line);
+                    if (cells.length >= 5 && cells[0]) {
+                        importItems.push({
+                            name: cells[0],
+                            type: cells[1] === 'منتج نهائي' ? 'FINAL_PRODUCT' : 'MATERIAL',
+                            category: cells[2] || '',
+                            stock: parseFloat(cells[3]) || 0,
+                            unit: cells[4] || 'قطعة',
+                            lastPurchasedPrice: parseFloat(cells[5]) || 0
+                        });
+                    }
+                }
+                if (importItems.length > 0) {
+                    if (!confirm(`سيتم إضافة ${importItems.length} صنف جديد إلى المخزن. هل تود الاستمرار؟`)) return;
+                    setLoading(true);
+                    const res = await fetch('/api/inventory', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(importItems)
+                    });
+                    if (res.ok) {
+                        alert(`✅ تم استيراد ${importItems.length} صنف بنجاح`);
+                        fetchInventory();
+                    } else {
+                        const err = await res.json();
+                        alert(`❌ فشل الاستيراد: ${err.error || 'خطأ غير معروف'}`);
+                    }
+                }
+            } catch (err) {
+                alert('❌ حدث خطأ في معالجة الملف، تأكد من أن الملف بصيغة CSV صحيحة');
+            } finally {
+                setLoading(false);
+                if (e.target) e.target.value = '';
+            }
+        };
+        reader.readAsText(file, "UTF-8");
+    };
+
     const sym = (() => { try { return JSON.parse(localStorage.getItem('erp_settings') || '{}').currencySymbol || 'ج.م'; } catch { return 'ج.م'; } })();
 
     // ── Filtered audit list ────────────────────────────────────────────────────
@@ -115,30 +270,88 @@ export default function InventoryPage() {
     }, [fullAuditList, auditTypeFilter, auditCategoryFilter, auditSearch, auditLowOnly]);
 
     const uniqueCategories = useMemo(() => {
-        const cats = fullAuditList.map(i => i.category).filter(c => c && c.trim() !== '');
-        return Array.from(new Set(cats));
-    }, [fullAuditList]);
+        const fromItems = fullAuditList.map(i => i.category).filter(c => c && c.trim() !== '') as string[];
+        const fromDefs = inventoryCategories.map(c => c.label);
+        return Array.from(new Set([...fromItems, ...fromDefs]));
+    }, [fullAuditList, inventoryCategories]);
 
-    // ── Print audit — filtered items only ─────────────────────────────────────
-    const printInventoryAudit = () => {
-        const win = window.open('', '_blank');
-        if (!win) return;
-        let t: any = {};
-        try {
-            const s = JSON.parse(localStorage.getItem('erp_settings') || '{}');
-            const saved = localStorage.getItem('erp_invoice_template');
-            t = { companyName: s.appName || '', accentColor: s.primaryColor || '#E35E35', footerText: 'شكراً لتعاملكم معنا', ...(saved ? JSON.parse(saved) : {}) };
-        } catch { }
-        const accent = t.accentColor || '#E35E35';
+    const handlePrintInventoryReport = async () => {
+        if (auditList.length === 0) return;
+        const config = await fetchReportTemplate();
+        const symVal = config.currencySymbol || 'ج.م';
+
+        let filterText = auditTypeFilter === 'MATERIAL' ? 'خامات ومستلزمات' : auditTypeFilter === 'FINAL_PRODUCT' ? 'منتجات نهائية' : 'الكل';
+        if (auditCategoryFilter !== 'ALL') filterText += ` - ${auditCategoryFilter}`;
+        if (auditSearch) filterText += ` | بحث: "${auditSearch}"`;
+        if (auditLowOnly) filterText += ' | منخفضة فقط';
+
+        const metaInfo = [
+            ['تاريخ الجرد', new Date().toLocaleDateString('ar-EG')],
+            ['إجمالي الأصناف', String(auditList.length)],
+            ['الفلتر', filterText]
+        ];
+
         const totalValue = auditList.reduce((s, i) => s + (i.stock * (i.lastPurchasedPrice || 0)), 0);
-        const filterLabel = (auditTypeFilter === 'MATERIAL' ? 'خامات ومستلزمات' : auditTypeFilter === 'FINAL_PRODUCT' ? 'منتجات نهائية' : 'الكل') + (auditCategoryFilter !== 'ALL' ? ` - ${auditCategoryFilter}` : '');
-        const rows = auditList.map((item, idx) => {
+
+        const bodyHtml = `
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px;">
+                ${metaInfo.map(([label, value]) => `
+                    <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">${label}</div>
+                        <div style="font-size: 1rem; font-weight: 700; color: #1e293b;">${value}</div>
+                    </div>
+                `).join('')}
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>رقم</th>
+                        <th style="text-align: right;">اسم الصنف</th>
+                        <th>النوع</th>
+                        <th>التصنيف</th>
+                        <th>الكمية</th>
+                        <th>الوحدة</th>
+                        <th>سعر الوحدة</th>
+                        <th>القيمة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${auditList.map((item, idx) => {
             const val = item.stock * (item.lastPurchasedPrice || 0);
-            const low = item.stock <= 5;
-            return `<tr><td style="text-align:center;color:#888">${idx + 1}</td><td>${item.name}</td><td style="color:${typeColor(item.type)};text-align:center">${typeLabel(item.type)}</td><td style="text-align:center;color:#888">${item.category || '-'}</td><td style="text-align:center;font-weight:bold;color:${low ? '#c0392b' : '#1a7a3c'}">${item.stock.toFixed(0)}${low ? ' ⚠' : ''}</td><td style="text-align:center;color:#888">${item.unit}</td><td style="text-align:center">${item.lastPurchasedPrice ? item.lastPurchasedPrice.toFixed(0) : '-'}</td><td style="text-align:center;font-weight:bold;color:${val > 0 ? '#1565C0' : '#888'}">${val > 0 ? val.toFixed(0) : '-'}</td></tr>`;
-        }).join('');
-        win.document.write(`<html dir="rtl"><head><title>تقرير الجرد التفصيلي</title><style>@page{size:A4 landscape;margin:10mm 12mm}*{box-sizing:border-box}body{font-family:Tahoma,Arial,sans-serif;color:#222;font-size:12px;margin:0}.hdr{border-bottom:3px solid ${accent};padding-bottom:10px;margin-bottom:14px;display:flex;justify-content:space-between}.filter-tag{display:inline-block;padding:2px 10px;border-radius:12px;background:${accent}22;color:${accent};font-size:0.78rem;margin-top:4px}h1{margin:0;color:${accent};font-size:1.2rem}table{width:100%;border-collapse:collapse}th{background:${accent};color:#fff;padding:6px 8px;text-align:right;font-size:0.8rem}td{padding:5px 8px;border-bottom:1px solid #eee;font-size:0.79rem}tr:nth-child(even) td{background:#f9f9f9}.footer-row{background:${accent}!important}.footer-row td{color:#fff!important;font-weight:bold!important;text-align:center!important}</style></head><body onload="window.print()"><div class="hdr"><div><h1>${t.companyName}</h1><p style="margin:3px 0;color:#666;font-size:0.78rem">تاريخ الجرد: ${new Date().toLocaleDateString('ar-EG')} — إجمالي الأصناف المعروضة: ${auditList.length}</p><span class="filter-tag">الفلتر: ${filterLabel}${auditSearch ? ` | بحث: "${auditSearch}"` : ''}${auditLowOnly ? ' | منخفضة فقط' : ''}</span></div><h2 style="color:${accent};margin:0">📊 تقرير الجرد التفصيلي</h2></div><table><thead><tr><th style="text-align:center">#</th><th>اسم الصنف</th><th style="text-align:center">النوع</th><th style="text-align:center">التصنيف</th><th style="text-align:center">الكمية</th><th style="text-align:center">الوحدة</th><th style="text-align:center">سعر الوحدة (${sym})</th><th style="text-align:center">القيمة (${sym})</th></tr></thead><tbody>${rows}<tr class="footer-row"><td colspan="7">إجمالي قيمة الأصناف المعروضة</td><td>${totalValue.toLocaleString('ar-EG', { minimumFractionDigits: 0 })} ${sym}</td></tr></tbody></table>${t.footerText ? `<div style="margin-top:16px;padding-top:10px;border-top:1px solid #eee;text-align:center;color:#777;font-size:0.8rem">${t.footerText}</div>` : ''}</body></html>`);
-        win.document.close();
+            return `
+                        <tr>
+                            <td style="text-align: center;">${idx + 1}</td>
+                            <td style="text-align: right;">${item.name}</td>
+                            <td style="text-align: center;">${typeLabel(item.type)}</td>
+                            <td style="text-align: center;">${item.category || '-'}</td>
+                            <td style="text-align: center; ${item.stock <= 5 ? 'color: #ef4444; font-weight: bold;' : ''}">${item.stock.toFixed(0)}</td>
+                            <td style="text-align: center;">${item.unit}</td>
+                            <td style="text-align: center;">${item.lastPurchasedPrice ? item.lastPurchasedPrice.toFixed(0) : '-'}</td>
+                            <td style="text-align: center;">${val > 0 ? val.toFixed(0) : '-'}</td>
+                        </tr>
+                    `}).join('')}
+                </tbody>
+            </table>
+
+            <div style="margin-top: 25px; padding: 15px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; text-align: center;">
+                <div style="font-size: 0.9rem; color: #166534; font-weight: 700;">إجمالي قيمة الأصناف المعروضة</div>
+                <div style="font-size: 1.4rem; font-weight: 900; color: #15803d; margin-top: 5px;">${totalValue.toLocaleString('ar-EG')} ${symVal}</div>
+            </div>
+        `;
+
+        const html = generatePrintHtml(bodyHtml, 'تقرير الجرد التفصيلي', config);
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        iframe.contentWindow?.document.open();
+        iframe.contentWindow?.document.write(html);
+        iframe.contentWindow?.document.close();
+        iframe.onload = () => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setTimeout(() => document.body.removeChild(iframe), 2000);
+        };
     };
 
     // Filter logic for main tabs
@@ -155,232 +368,211 @@ export default function InventoryPage() {
     });
 
     const uniqueMainCategories = useMemo(() => {
+        // Collect categories from actual items
         let relevant = items;
         if (filter === 'MATERIAL') relevant = items.filter(i => i.type === 'MATERIAL');
         if (filter === 'FINAL') relevant = items.filter(i => i.type === 'FINAL_PRODUCT' && i.category !== 'MANUFACTURED_PRICING');
-        const cats = relevant.map(i => i.category).filter(c => c && c.trim() !== '' && c !== 'MANUFACTURED_PRICING');
-        return Array.from(new Set(cats));
-    }, [items, filter]);
+        const fromItems = relevant.map(i => i.category).filter(c => c && c.trim() !== '' && c !== 'MANUFACTURED_PRICING') as string[];
+        // Add predefined inventory category labels
+        const fromDefs = inventoryCategories.map(c => c.label);
+        return Array.from(new Set([...fromItems, ...fromDefs]));
+    }, [items, filter, inventoryCategories]);
 
-    // Reset pagination when filters change
+    // Reset pagination
     useEffect(() => { setCurrentPage(1); }, [filter, search, categoryFilter, auditSearch, auditTypeFilter, auditCategoryFilter, auditLowOnly]);
 
-    // Paginate Audit List
-    const totalAuditPages = Math.ceil(auditList.length / pageSize);
+    const totalAuditPages = pageSize === 'ALL' ? 1 : Math.ceil(auditList.length / pageSize);
     const paginatedAuditList = useMemo(() => {
+        if (pageSize === 'ALL') return auditList;
         const start = (currentPage - 1) * pageSize;
         return auditList.slice(start, start + pageSize);
-    }, [auditList, currentPage]);
+    }, [auditList, currentPage, pageSize]);
 
-    // Paginate Main List
-    const totalPages = Math.ceil(filtered.length / pageSize);
+    const totalPages = pageSize === 'ALL' ? 1 : Math.ceil(filtered.length / pageSize);
     const paginatedFiltered = useMemo(() => {
+        if (pageSize === 'ALL') return filtered;
         const start = (currentPage - 1) * pageSize;
         return filtered.slice(start, start + pageSize);
-    }, [filtered, currentPage]);
+    }, [filtered, currentPage, pageSize]);
 
     const pricingItems = items.filter(i => i.category === 'MANUFACTURED_PRICING');
     const stockItems = items.filter(i => i.type === 'FINAL_PRODUCT' && i.category !== 'MANUFACTURED_PRICING');
     const materialItems = items.filter(i => i.type === 'MATERIAL');
 
-    // Low stock items with alert threshold
-    const lowStockItems = useMemo(() => {
-        return items.filter(i => {
-            if (i.category === 'MANUFACTURED_PRICING') return false;
-            const threshold = alertThresholds[i.id] ?? 10;
-            return i.stock <= threshold;
-        });
-    }, [items, alertThresholds]);
+    const lowStockItems = useMemo(() => items.filter(i => {
+        if (i.category === 'MANUFACTURED_PRICING') return false;
+        const threshold = alertThresholds[i.id] ?? 10;
+        return i.stock <= threshold;
+    }), [items, alertThresholds]);
 
     const visibleAlerts = lowStockItems.filter(i => !dismissedAlerts.has(i.id));
 
     return (
-        <div className="animate-fade-in">
-            <header style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+        <div className="unified-container animate-fade-in">
+            <header className="page-header">
                 <div>
-                    <h1>المخزن الذكي</h1>
-                    <p>متابعة آنية للأرصدة الفعلية مع إمكانية التعديل والحذف والجرد التفصيلي</p>
+                    <h1 className="page-title">📦 المخزن الذكي</h1>
+                    <p className="page-subtitle">متابعة آنية للأرصدة الفعلية مع إمكانية التعديل والحذف والجرد التفصيلي</p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    {filter === 'AUDIT' && (
-                        <button onClick={printInventoryAudit} className="btn-secondary" style={{ backgroundColor: '#ffa7261a', color: '#ffa726', borderColor: '#ffa72644' }}>
-                            🖨 طباعة الجرد المعروض PDF
-                        </button>
-                    )}
-                    <button onClick={() => setShowAdd(true)} className="btn-primary">
-                        + إضافة صنف جديد
-                    </button>
+                <div className="header-actions">
+                    <button onClick={exportToCSV} className="btn-modern btn-secondary">📥 تصدير</button>
+                    <label className="btn-modern btn-secondary cursor-pointer">
+                        📤 استيراد
+                        <input type="file" accept=".csv" onChange={handleImportCSV} className="hidden-input" />
+                    </label>
+                    <button onClick={() => setShowCatMgr(true)} className="btn-modern btn-primary btn-brown">🔧 إدارة أقسام الورشة</button>
+                    <button onClick={() => setShowAdd(true)} className="btn-primary">+ إضافة صنف جديد</button>
                 </div>
             </header>
 
-            {/* ── Smart Low Stock Alerts ── */}
+            {/* Alerts Section */}
             {visibleAlerts.length > 0 && showAlerts && (
-                <div style={{ marginBottom: '1.5rem', background: 'rgba(227,94,53,0.06)', border: '1px solid rgba(227,94,53,0.25)', borderRadius: '14px', padding: '1.2rem', position: 'relative' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '1.3rem' }}>⚠️</span>
+                <div className="alerts-container">
+                    <div className="alerts-header">
+                        <div className="alerts-title-group">
+                            <span className="alert-icon">⚠️</span>
                             <div>
-                                <h4 style={{ margin: 0, color: '#E35E35', fontSize: '0.95rem' }}>تنبيه مخزن — {visibleAlerts.length} صنف في حاجة للطلب</h4>
-                                <p style={{ margin: 0, fontSize: '0.78rem', color: '#888' }}>هذه الأصناف وصلت للحد الأدنى من الرصيد في المخزن</p>
+                                <h4 className="alert-count-title">تنبيه مخزن — {visibleAlerts.length} صنف في حاجة للطلب</h4>
+                                <p className="alert-subtitle">هذه الأصناف وصلت للحد الأدنى من الرصيد</p>
                             </div>
                         </div>
-                        <button onClick={() => setShowAlerts(false)} style={{ background: 'transparent', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+                        <button onClick={() => setShowAlerts(false)} className="alert-close-btn">✕</button>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: '10px' }}>
+                    <div className="alerts-grid">
                         {visibleAlerts.slice(0, 8).map(item => {
                             const threshold = alertThresholds[item.id] ?? 10;
                             const pct = Math.min(100, (item.stock / threshold) * 100);
                             return (
-                                <div key={item.id} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px', border: '1px solid rgba(227,94,53,0.15)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div key={item.id} className="alert-card">
+                                    <div className="alert-card-info">
                                         <div>
-                                            <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem' }}>{item.name}</div>
-                                            <div style={{ fontSize: '0.75rem', color: '#888' }}>{item.category || item.type}</div>
+                                            <div className="alert-item-name">{item.name}</div>
+                                            <div className="alert-item-category">{item.category || item.type}</div>
                                         </div>
-                                        <span style={{ padding: '2px 8px', background: item.stock === 0 ? '#E35E3533' : '#ffa72622', color: item.stock === 0 ? '#E35E35' : '#ffa726', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700 }}>
+                                        <span className={`alert-badge ${item.stock === 0 ? 'out-of-stock' : 'low-stock'}`}>
                                             {item.stock === 0 ? 'نفذ!' : `${item.stock.toFixed(0)} ${item.unit}`}
                                         </span>
                                     </div>
-                                    {/* Progress bar */}
-                                    <div style={{ height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                                        <div style={{ width: `${pct}%`, height: '100%', background: item.stock === 0 ? '#E35E35' : '#ffa726', borderRadius: '2px', transition: 'width 0.5s' }} />
+                                    <div className="alert-progress-bg">
+                                        <div className={`alert-progress-fill ${item.stock === 0 ? 'empty' : 'warning'}`} style={{ width: `${pct}%` }} />
                                     </div>
-                                    <div style={{ display: 'flex', gap: '6px' }}>
-                                        <Link href={`/purchases?prefill=${encodeURIComponent(item.name)}`} style={{ flex: 1, textAlign: 'center', padding: '6px', background: 'rgba(227,94,53,0.15)', border: '1px solid rgba(227,94,53,0.3)', color: '#E35E35', borderRadius: '8px', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 700 }}>
-                                            🛒 اطلب الآن
-                                        </Link>
-                                        <button onClick={() => setDismissedAlerts(prev => new Set([...prev, item.id]))} style={{ padding: '6px 10px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#888', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem' }}>تجاهل</button>
+                                    <div className="alert-actions-btns">
+                                        <Link href={`/purchases?prefill=${encodeURIComponent(item.name)}`} className="order-now-btn">🛒 اطلب</Link>
+                                        <button onClick={() => setDismissedAlerts(prev => new Set([...prev, item.id]))} className="dismiss-alert-btn">تجاهل</button>
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
-                    {visibleAlerts.length > 8 && (
-                        <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '0.82rem', color: '#888' }}>و {visibleAlerts.length - 8} أصناف أخرى • <button onClick={() => setFilter('AUDIT')} style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>عرض الجرد الكامل</button></div>
-                    )}
                 </div>
             )}
 
-            {/* Re-show alerts button */}
             {!showAlerts && lowStockItems.length > 0 && (
-                <button onClick={() => setShowAlerts(true)} style={{ marginBottom: '1rem', padding: '8px 16px', background: 'rgba(227,94,53,0.1)', border: '1px solid rgba(227,94,53,0.3)', color: '#E35E35', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.85rem' }}>
+                <button onClick={() => setShowAlerts(true)} className="reshow-alerts-btn">
                     ⚠️ عرض تنبيهات المخزن ({lowStockItems.length})
                 </button>
             )}
 
-            {/* ── Stats Cards ── */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '1.5rem' }}>
-                {[
-                    { label: 'إجمالي الأصناف', value: items.length, color: 'var(--primary-color)' },
-                    { label: 'خامات ومستلزمات', value: materialItems.length, color: '#29b6f6' },
-                    { label: 'منتجات بالمخزن', value: stockItems.length, color: '#66bb6a' },
-                    { label: 'منتجات مصنعة (تسعير)', value: pricingItems.length, color: '#ab47bc' },
-                ].map(c => (
-                    <div key={c.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${c.color}22`, borderRadius: '12px', padding: '14px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: c.color }}>{c.value}</div>
-                        <div style={{ fontSize: '0.78rem', color: '#919398', marginTop: '4px' }}>{c.label}</div>
-                    </div>
-                ))}
+            {/* Stats Cards */}
+            <div className="stats-cards-grid">
+                <div className="inventory-stat-card" style={{ border: '1px solid #29b6f622' }}>
+                    <div className="stat-val" style={{ color: '#29b6f6' }}>{items.length}</div>
+                    <div className="stat-label">إجمالي الأصناف</div>
+                </div>
+                <div className="inventory-stat-card" style={{ border: '1px solid #29b6f622' }}>
+                    <div className="stat-val" style={{ color: '#29b6f6' }}>{materialItems.length}</div>
+                    <div className="stat-label">خامات ومستلزمات</div>
+                </div>
+                <div className="inventory-stat-card" style={{ border: '1px solid #66bb6a22' }}>
+                    <div className="stat-val" style={{ color: '#66bb6a' }}>{stockItems.length}</div>
+                    <div className="stat-label">منتجات نهائية</div>
+                </div>
+                <div className="inventory-stat-card" style={{ border: '1px solid #ab47bc22' }}>
+                    <div className="stat-val" style={{ color: '#ab47bc' }}>{pricingItems.length}</div>
+                    <div className="stat-label">منتجات (تسعير)</div>
+                </div>
             </div>
 
-            {/* ── Filter Tabs ── */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Tabs & Search */}
+            <div className="filter-tabs-bar">
                 {TABS.map(t => (
                     <button key={t.key} onClick={() => setFilter(t.key)}
+                        className={`btn-modern filter-tab-btn ${filter === t.key ? 'active' : ''}`}
                         style={{
-                            padding: '8px 16px', borderRadius: '8px', border: `1px solid ${t.color}`, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: '0.86rem',
-                            background: filter === t.key ? t.color : 'transparent', color: filter === t.key ? '#fff' : t.color
+                            borderColor: t.color,
+                            background: filter === t.key ? t.color : 'transparent',
+                            color: filter === t.key ? '#fff' : t.color
                         }}>
                         {t.label}
                     </button>
                 ))}
                 {filter !== 'AUDIT' && (
-                    <select id="cat_filter" title="فلترة حسب القسم" className="input-glass" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} style={{ padding: '8px', minWidth: '150px' }}>
-                        <option value="ALL">جميع الأقسام</option>
-                        {uniqueMainCategories.map((c: any) => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    <>
+                        {/* Category Pills Filter */}
+                        <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px', padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: '6px', fontWeight: 700 }}>🗂 القسم:</span>
+                            <button
+                                onClick={() => setCategoryFilter('ALL')}
+                                style={{
+                                    padding: '4px 12px', borderRadius: '999px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s',
+                                    border: `1px solid ${categoryFilter === 'ALL' ? 'var(--primary-color)' : 'rgba(255,255,255,0.12)'}`,
+                                    background: categoryFilter === 'ALL' ? 'var(--primary-color)' : 'transparent',
+                                    color: categoryFilter === 'ALL' ? '#fff' : 'rgba(255,255,255,0.7)'
+                                }}
+                            >الكل</button>
+                            {uniqueMainCategories.map((c: string) => {
+                                const def = inventoryCategories.find(ic => ic.label === c);
+                                const color = def?.color || '#919398';
+                                const isActive = categoryFilter === c;
+                                return (
+                                    <button key={c} onClick={() => setCategoryFilter(isActive ? 'ALL' : c)}
+                                        style={{
+                                            padding: '4px 12px', borderRadius: '999px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s',
+                                            border: `1px solid ${isActive ? color : color + '55'}`,
+                                            background: isActive ? color : color + '15',
+                                            color: isActive ? '#fff' : color
+                                        }}
+                                    >{c}</button>
+                                );
+                            })}
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px' }}>
+                            <input type="text" className="input-glass item-search-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث باسم الصنف.." />
+                            <span className="results-count">النتائج: {filtered.length}</span>
+                        </div>
+                    </>
+
                 )}
-                {filter !== 'AUDIT' && (
-                    <input id="item_search" type="text" title="بحث باسم الصنف" className="input-glass" value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث باسم الصنف.." style={{ flex: 1, minWidth: '200px', maxWidth: '280px' }} />
-                )}
-                {filter !== 'AUDIT' && <span style={{ color: '#919398', fontSize: '0.83rem' }}>النتائج: {filtered.length}</span>}
             </div>
 
-            {/* ── Pricing Tab Notice ── */}
-            {filter === 'PRICING' && (
-                <div style={{ background: 'rgba(171,71,188,0.08)', border: '1px solid rgba(171,71,188,0.25)', borderRadius: '10px', padding: '12px 16px', marginBottom: '1.25rem', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '1.4rem' }}>🏷</span>
-                    <div>
-                        <strong style={{ color: '#ab47bc' }}>تسعير المنتجات المصنعة</strong>
-                        <p style={{ color: '#919398', fontSize: '0.84rem', margin: '2px 0 0' }}>
-                            هذه المنتجات سُجِّلت من أوامر التصنيع بدون كمية محددة — تحتوي على التكلفة الإجمالية للوحدة لأغراض التسعير فقط.
-                        </p>
-                    </div>
-                </div>
-            )}
-
-            {/* ═══ AUDIT TAB — with filters ═══ */}
-            {filter === 'AUDIT' && (
-                <div className="glass-panel" style={{ padding: '1.5rem' }}>
-                    {/* Header + stats */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                        <h3 style={{ margin: 0, color: '#ffa726' }}>📊 الجرد التفصيلي للمخزن</h3>
-                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                            {[
-                                { label: 'الأصناف المعروضة', value: auditList.length, color: '#ffa726' },
-                                { label: 'القيمة الإجمالية المعروضة', value: auditList.reduce((s, i) => s + (i.stock * (i.lastPurchasedPrice || 0)), 0).toFixed(0) + ` ${sym}`, color: '#66bb6a' },
-                                { label: 'أصناف منخفضة ≤ 5', value: fullAuditList.filter(i => i.stock <= 5).length, color: '#E35E35' },
-                            ].map(s => (
-                                <div key={s.label} style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: s.color }}>{s.value}</div>
-                                    <div style={{ fontSize: '0.76rem', color: '#919398' }}>{s.label}</div>
-                                </div>
-                            ))}
+            {/* Main Content Area */}
+            {filter === 'AUDIT' ? (
+                <div className="glass-panel audit-panel">
+                    <div className="audit-header-row">
+                        <h3 className="text-orange">📊 الجرد التفصيلي للمخزن</h3>
+                        <div className="audit-filters-bar">
+                            <select className="input-glass audit-cat-select" value={auditCategoryFilter} onChange={e => setAuditCategoryFilter(e.target.value)}>
+                                <option value="ALL">جميع التصنيفات</option>
+                                {uniqueCategories.map((c: any) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <input type="text" className="input-glass audit-search-input" value={auditSearch} onChange={e => setAuditSearch(e.target.value)} placeholder="بحث في الجرد.." />
+                            <button onClick={handlePrintInventoryReport} className="btn-modern btn-primary">🖨️ طباعة التقرير</button>
                         </div>
                     </div>
 
-                    {/* ── Audit Filters Bar ── */}
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '16px', padding: '12px 16px', background: 'rgba(255,167,38,0.06)', borderRadius: '10px', border: '1px solid rgba(255,167,38,0.2)' }}>
-                        <span style={{ color: '#ffa726', fontWeight: 600, fontSize: '0.85rem' }}>🔍 فلترة الجرد:</span>
-                        {[
-                            { key: 'ALL', label: 'الكل' },
-                            { key: 'MATERIAL', label: '🔩 خامات' },
-                            { key: 'FINAL_PRODUCT', label: '✅ منتجات نهائية' },
-                        ].map(opt => (
-                            <button key={opt.key} onClick={() => setAuditTypeFilter(opt.key)}
-                                style={{ padding: '5px 14px', borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.82rem', fontWeight: auditTypeFilter === opt.key ? 700 : 400, background: auditTypeFilter === opt.key ? '#ffa726' : 'transparent', color: auditTypeFilter === opt.key ? '#111' : '#ffa726', border: '1px solid #ffa72666' }}>
-                                {opt.label}
-                            </button>
-                        ))}
-                        <select id="audit_cat_filter" title="تصنيف الجرد" className="input-glass" value={auditCategoryFilter} onChange={e => setAuditCategoryFilter(e.target.value)} style={{ padding: '8px', minWidth: '150px' }}>
-                            <option value="ALL">جميع التصنيفات</option>
-                            {uniqueCategories.map((c: any) => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <input id="audit_search" type="text" title="بحث في الجرد" className="input-glass" value={auditSearch} onChange={e => setAuditSearch(e.target.value)}
-                            placeholder="بحث في الجرد.." style={{ flex: 1, minWidth: '150px', maxWidth: '240px' }} />
-                        <label htmlFor="audit_low_only" style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.83rem', color: '#E35E35', userSelect: 'none' }}>
-                            <input id="audit_low_only" type="checkbox" checked={auditLowOnly} onChange={e => setAuditLowOnly(e.target.checked)} title="تصفية الأصناف المنخفضة"
-                                style={{ width: '15px', height: '15px', accentColor: '#E35E35' }} />
-                            ⚠️ المنخفضة فقط
-                        </label>
-                        <span style={{ color: '#919398', fontSize: '0.8rem', marginRight: 'auto' }}>
-                            يُعرض {auditList.length} صنف من {fullAuditList.length}
-                        </span>
-                    </div>
-
-                    <div className="table-container" style={{ maxHeight: '600px' }}>
-                        <table className="table-glass">
+                    <div className="smart-table-container table-wrapper">
+                        <table className="smart-table table-glass high-density responsive-cards">
                             <thead>
                                 <tr>
-                                    <th style={{ width: '40px', textAlign: 'center' }}>#</th>
+                                    <th className="hide-on-tablet w-10 text-center">#</th>
                                     <th>اسم الصنف</th>
-                                    <th style={{ textAlign: 'center' }}>النوع</th>
-                                    <th style={{ textAlign: 'center' }}>التصنيف</th>
-                                    <th style={{ textAlign: 'center' }}>الكمية</th>
-                                    <th style={{ textAlign: 'center' }}>الوحدة</th>
-                                    <th style={{ textAlign: 'center' }}>سعر الوحدة ({sym})</th>
-                                    <th style={{ textAlign: 'center' }}>القيمة الإجمالية ({sym})</th>
-                                    <th style={{ textAlign: 'center' }}>تعديل</th>
+                                    <th className="hide-on-tablet text-center">النوع</th>
+                                    <th className="hide-on-tablet text-center">التصنيف</th>
+                                    <th className="text-center">الكمية</th>
+                                    <th className="text-center">الوحدة</th>
+                                    <th className="text-center">سعر الوحدة</th>
+                                    <th className="hide-on-tablet text-center">القيمة</th>
+                                    <th className="text-center">إجراء</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -388,74 +580,54 @@ export default function InventoryPage() {
                                     const val = item.stock * (item.lastPurchasedPrice || 0);
                                     const low = item.stock <= 5;
                                     return (
-                                        <tr key={item.id} style={{ background: low ? 'rgba(227,94,53,0.04)' : 'transparent' }}>
-                                            <td style={{ textAlign: 'center', color: '#888', fontSize: '0.8rem' }}>{idx + 1}</td>
-                                            <td style={{ fontWeight: 'bold' }}>{item.name}</td>
-                                            <td style={{ textAlign: 'center' }}>
-                                                <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '0.78rem', background: `${typeColor(item.type)}18`, color: typeColor(item.type) }}>
+                                        <tr key={item.id} className={low ? 'low-stock-row' : ''}>
+                                            <td className="hide-on-tablet text-center text-muted" data-label="#">{idx + 1}</td>
+                                            <td data-label="اسم الصنف">
+                                                <div className="mobile-card-title">{item.name}</div>
+                                                <div className="text-muted text-sm mt-1 hide-on-pc" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <span>{item.category || '-'}</span>
+                                                    <span className={`sh-badge ${item.type === 'FINAL_PRODUCT' ? 'paid' : 'partial'}`} style={{ whiteSpace: 'nowrap', padding: '3px 8px', fontSize: '0.75rem' }}>
+                                                        {typeLabel(item.type)}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="hide-on-tablet text-center" data-label="النوع">
+                                                <span className={`sh-badge ${item.type === 'FINAL_PRODUCT' ? 'paid' : 'partial'}`} style={{ whiteSpace: 'nowrap' }}>
                                                     {typeLabel(item.type)}
                                                 </span>
                                             </td>
-                                            <td style={{ textAlign: 'center', color: '#919398', fontSize: '0.82rem' }}>{item.category || '-'}</td>
-                                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: low ? '#E35E35' : '#66bb6a' }}>
-                                                {item.stock.toFixed(0)}{low && ' ⚠️'}
+                                            <td className="hide-on-tablet text-center text-muted text-sm" data-label="التصنيف">{item.category || '-'}</td>
+                                            <td className="text-center" data-label="الكمية">
+                                                <div className={`mobile-card-balance ${low ? 'text-danger' : 'text-success'}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                                    {item.stock.toFixed(0)}{low && ' ⚠️'}
+                                                </div>
                                             </td>
-                                            <td style={{ textAlign: 'center', color: '#919398' }}>{item.unit}</td>
-                                            <td style={{ textAlign: 'center', color: 'var(--primary-color)' }}>
-                                                {item.lastPurchasedPrice ? `${item.lastPurchasedPrice.toFixed(0)} ${sym}` : '-'}
-                                            </td>
-                                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: val > 0 ? '#29b6f6' : '#555' }}>
-                                                {val > 0 ? `${val.toFixed(0)} ${sym}` : '-'}
-                                            </td>
-                                            <td style={{ textAlign: 'center' }}>
-                                                <button onClick={() => openEdit(item)}
-                                                    className="btn-secondary btn-sm"
-                                                    style={{ color: '#29b6f6', borderColor: 'rgba(41, 182, 246, 0.3)' }}>
-                                                    ✏️ تعديل
-                                                </button>
+                                            <td className="text-center text-muted" data-label="الوحدة">{item.unit}</td>
+                                            <td className="text-center text-primary" data-label="سعر الوحدة">{item.lastPurchasedPrice ? `${item.lastPurchasedPrice.toFixed(0)} ${sym}` : '-'}</td>
+                                            <td className="hide-on-tablet text-center font-bold" data-label="القيمة">{val > 0 ? `${val.toFixed(0)} ${sym}` : '-'}</td>
+                                            <td className="text-center" data-label="إجراء">
+                                                <button onClick={() => openEdit(item)} className="btn-modern btn-secondary btn-sm" title="تعديل">✏️</button>
                                             </td>
                                         </tr>
                                     );
                                 })}
-                                {auditList.length === 0 && (
-                                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>لا توجد أصناف تطابق معايير الفلترة</td></tr>
-                                )}
-                                <tr style={{ background: 'rgba(255,167,38,0.12)' }}>
-                                    <td colSpan={8} style={{ textAlign: 'center', fontWeight: 'bold', color: '#ffa726', fontSize: '0.95rem' }}>
-                                        💰 إجمالي قيمة الأصناف المعروضة
-                                    </td>
-                                    <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#66bb6a', fontSize: '1.05rem' }}>
-                                        {auditList.reduce((s, i) => s + (i.stock * (i.lastPurchasedPrice || 0)), 0).toFixed(0)} {sym}
-                                    </td>
-                                </tr>
                             </tbody>
                         </table>
-                        {totalAuditPages > 1 && (
-                            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', padding: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '10px' }}>
-                                <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn-secondary" style={{ opacity: currentPage === 1 ? 0.3 : 1 }}>السابق</button>
-                                <span style={{ alignSelf: 'center', fontSize: '0.9rem' }}>صفحة {currentPage} من {totalAuditPages}</span>
-                                <button disabled={currentPage === totalAuditPages} onClick={() => setCurrentPage(p => p + 1)} className="btn-secondary" style={{ opacity: currentPage === totalAuditPages ? 0.3 : 1 }}>التالي</button>
-                            </div>
-                        )}
                     </div>
                 </div>
-            )}
-
-            {/* ── Main Table (non-AUDIT tabs) ── */}
-            {filter !== 'AUDIT' && (
-                <div className="glass-panel" style={{ padding: '1.5rem' }}>
-                    {loading ? <p>جاري تحميل المخزن...</p> : (
-                        <div className="table-container">
-                            <table className="table-glass">
+            ) : (
+                <div className="glass-panel main-inventory-panel">
+                    {loading ? <p className="loading-txt">جاري تحميل المخزن...</p> : (
+                        <div className="smart-table-container table-wrapper">
+                            <table className="smart-table table-glass high-density responsive-cards">
                                 <thead>
                                     <tr>
-                                        <th>النوع</th>
-                                        <th>التصنيف</th>
                                         <th>اسم الصنف</th>
-                                        <th>الرصيد</th>
-                                        <th>الوحدة</th>
-                                        <th>آخر تكلفة / وحدة</th>
-                                        <th>الإجراءات</th>
+                                        <th className="hide-on-tablet">التصنيف</th>
+                                        <th className="text-center">الكمية</th>
+                                        <th className="text-center">الوحدة</th>
+                                        <th className="hide-on-tablet text-center">آخر سعر شراء</th>
+                                        <th className="text-left">الإجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -463,49 +635,35 @@ export default function InventoryPage() {
                                         const isPricing = item.category === 'MANUFACTURED_PRICING';
                                         return (
                                             <tr key={item.id}>
-                                                <td>
-                                                    {isPricing ? (
-                                                        <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', background: 'rgba(171,71,188,0.15)', color: '#ab47bc' }}>
-                                                            🏷 تسعير مصنّع
-                                                        </span>
-                                                    ) : (
-                                                        <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', background: `${typeColor(item.type)}18`, color: typeColor(item.type) }}>
+                                                <td data-label="اسم الصنف">
+                                                    <div className="mobile-card-title">{item.name}</div>
+                                                    <div className="text-muted text-sm mt-1 hide-on-pc" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                        <span>{isPricing ? 'تسعير مصنعة' : (item.category || '-')}</span>
+                                                        <span className={`sh-badge ${item.type === 'FINAL_PRODUCT' ? 'paid' : 'partial'}`} style={{ whiteSpace: 'nowrap', padding: '3px 8px', fontSize: '0.75rem' }}>
                                                             {typeLabel(item.type)}
                                                         </span>
-                                                    )}
+                                                    </div>
                                                 </td>
-                                                <td style={{ color: '#919398', fontSize: '0.83rem' }}>{item.category === 'MANUFACTURED_PRICING' ? 'تسعير مصنعة' : item.category || '-'}</td>
-                                                <td style={{ fontWeight: 'bold' }}>{item.name}</td>
-                                                <td>
+                                                <td className="hide-on-tablet text-muted text-sm" data-label="التصنيف">
+                                                    {isPricing ? 'تسعير مصنعة' : (item.category || '-')}
+                                                </td>
+                                                <td className="text-center" data-label="الكمية">
                                                     {isPricing ? (
-                                                        <span style={{ color: '#ab47bc', fontSize: '0.83rem' }}>للتسعير فقط</span>
+                                                        <span className="text-primary font-bold text-sm">للتسعير</span>
                                                     ) : (
-                                                        <span style={{
-                                                            padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold',
-                                                            background: item.stock <= 5 ? 'rgba(227,94,53,0.15)' : 'rgba(102,187,106,0.1)',
-                                                            color: item.stock <= 5 ? '#E35E35' : '#66bb6a'
-                                                        }}>
+                                                        <div className={`mobile-card-balance ${item.stock <= 5 ? 'text-danger' : 'text-success'}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                                                             {item.stock.toFixed(0)}{item.stock <= 5 && ' ⚠️'}
-                                                        </span>
+                                                        </div>
                                                     )}
                                                 </td>
-                                                <td style={{ color: '#919398' }}>{item.unit}</td>
-                                                <td style={{ color: 'var(--primary-color)', fontWeight: 600 }}>
-                                                    {item.lastPurchasedPrice
-                                                        ? <>{item.lastPurchasedPrice.toFixed(0)} <span style={{ fontSize: '0.78rem', color: '#919398' }}>{sym}</span></>
-                                                        : <span style={{ color: '#555' }}>-</span>}
+                                                <td className="text-center text-muted" data-label="الوحدة">{item.unit}</td>
+                                                <td className="hide-on-tablet text-center text-primary font-bold" data-label="آخر سعر شراء">
+                                                    {item.lastPurchasedPrice ? `${item.lastPurchasedPrice.toFixed(0)} ${sym}` : '-'}
                                                 </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                                        <button onClick={() => openEdit(item)}
-                                                            className="btn-secondary btn-sm"
-                                                            style={{ color: '#29b6f6', borderColor: 'rgba(41, 182, 246, 0.3)' }}>
-                                                            ✏️ تعديل
-                                                        </button>
-                                                        <button onClick={() => handleDelete(item.id, item.name)}
-                                                            className="btn-danger btn-sm">
-                                                            🗑 حذف
-                                                        </button>
+                                                <td data-label="الإجراءات" className="text-left">
+                                                    <div className="action-bar-cell mobile-card-actions">
+                                                        <button onClick={() => openEdit(item)} className="btn-modern btn-secondary btn-sm" title="تعديل">تعديل</button>
+                                                        <button onClick={() => handleDelete(item.id, item.name)} className="btn-modern btn-danger btn-sm" title="حذف">حذف</button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -513,90 +671,205 @@ export default function InventoryPage() {
                                     })}
                                     {filtered.length === 0 && (
                                         <tr>
-                                            <td colSpan={7} style={{ textAlign: 'center', padding: '2.5rem', color: '#555' }}>
-                                                {filter === 'PRICING'
-                                                    ? '📭 لا توجد منتجات مصنعة مسعّرة بعد — أضف شغلانة بدون كمية محددة من أوامر التصنيع'
-                                                    : 'لا توجد أصناف مطابقة'}
+                                            <td colSpan={6} className="text-center p-4 text-muted">
+                                                {filter === 'PRICING' ? '📭 لا توجد منتجات مصنعة مسعّرة بعد — أضف من أوامر التصنيع' : 'لا توجد أصناف مطابقة'}
                                             </td>
                                         </tr>
                                     )}
                                 </tbody>
                             </table>
-                            {totalPages > 1 && (
-                                <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', padding: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '10px' }}>
-                                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn-secondary" style={{ opacity: currentPage === 1 ? 0.3 : 1 }}>السابق</button>
-                                    <span style={{ alignSelf: 'center', fontSize: '0.9rem' }}>صفحة {currentPage} من {totalPages}</span>
-                                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="btn-secondary" style={{ opacity: currentPage === totalPages ? 0.3 : 1 }}>التالي</button>
-                                </div>
-                            )}
                         </div>
                     )}
                 </div>
             )}
 
-            {/* ═══ EDIT MODAL ═══ */}
+            {/* Pagination Controls */}
+            <div className="pagination-wrapper">
+                <div className="page-size-selector">
+                    <span className="ps-label">عدد النتائج:</span>
+                    <select value={pageSize} onChange={(e) => handlePageSizeChange(e.target.value)} className="ps-dropdown">
+                        <option value={5}>5</option>
+                        <option value={15}>15</option>
+                        <option value={30}>30</option>
+                        <option value="ALL">الكل</option>
+                    </select>
+                </div>
+                <div className="page-nav">
+                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn-modern btn-secondary">&rarr; السابق</button>
+                    <div className="page-indicator">{currentPage} / {filter === 'AUDIT' ? totalAuditPages : totalPages}</div>
+                    <button disabled={currentPage === (filter === 'AUDIT' ? totalAuditPages : totalPages)} onClick={() => setCurrentPage(p => p + 1)} className="btn-modern btn-secondary">التالي &larr;</button>
+                </div>
+            </div>
+
+            {/* Modals */}
             {editItem && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-                    <div style={{ background: '#1a1c22', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '2rem', width: '100%', maxWidth: '500px' }}>
-                        <h3 style={{ marginBottom: '1.5rem', color: '#29b6f6' }}>✏️ تعديل تفصيلي: {editItem.name}</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            <div><label htmlFor="edit_name">اسم الصنف</label><input id="edit_name" type="text" className="input-glass" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} title="اسم الصنف" /></div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                    <label htmlFor="edit_stock">الرصيد الحالي</label>
-                                    <input id="edit_stock" type="number" step="any" className="input-glass" value={editForm.stock} onChange={e => setEditForm(f => ({ ...f, stock: e.target.value }))} title="الرصيد الحالي" />
-                                </div>
-                                <div>
-                                    <label htmlFor="edit_unit">وحدة القياس</label>
-                                    <input id="edit_unit" type="text" className="input-glass" value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))} title="وحدة القياس" />
-                                </div>
+                <div className="modal-overlay">
+                    <div className="modal-content glass-panel" style={{ maxWidth: '500px' }}>
+                        <h3 className="text-primary">✏️ تعديل: {editItem.name}</h3>
+                        <div className="modal-form-grid">
+                            <div className="form-group">
+                                <label>اسم الصنف</label>
+                                <input type="text" className="input-glass" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
                             </div>
-                            <div><label htmlFor="edit_category">التصنيف</label><input id="edit_category" type="text" className="input-glass" value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} title="التصنيف" /></div>
-                            <div>
-                                <label htmlFor="edit_type">النوع</label>
-                                <select id="edit_type" className="input-glass" value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))} title="النوع">
-                                    <option value="MATERIAL">خامة / مستلزم تصنيع</option>
-                                    <option value="FINAL_PRODUCT">منتج نهائي</option>
-                                </select>
+                            <div className="form-row-grid">
+                                <div className="form-group">
+                                    <label>الرصيد</label>
+                                    <input type="number" className="input-glass" value={editForm.stock} onChange={e => setEditForm(f => ({ ...f, stock: e.target.value }))} />
+                                </div>
+                                <div className="form-group">
+                                    <label>الوحدة</label>
+                                    <input type="text" className="input-glass" value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))} />
+                                </div>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '12px', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
-                            <button onClick={() => setEditItem(null)} style={{ padding: '10px 20px', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#ccc', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
-                            <button onClick={handleSaveEdit} disabled={saving} className="btn-primary" style={{ padding: '10px 24px' }}>
-                                {saving ? 'جاري الحفظ...' : '💾 حفظ التعديل'}
-                            </button>
+                        <div className="modal-actions">
+                            <button onClick={() => setEditItem(null)} className="btn-modern btn-outline">إلغاء</button>
+                            <button onClick={handleSaveEdit} disabled={saving} className="btn-modern btn-primary">{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ═══ ADD MODAL ═══ */}
             {showAdd && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-                    <div style={{ background: '#1a1c22', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '16px', padding: '2rem', width: '100%', maxWidth: '500px' }}>
-                        <h3 style={{ marginBottom: '1.5rem', color: '#66bb6a' }}>+ إضافة صنف جديد للمخزن</h3>
-                        <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            <div>
-                                <label htmlFor="add_type">النوع</label>
-                                <select id="add_type" className="input-glass" value={addForm.type} onChange={e => setAddForm(f => ({ ...f, type: e.target.value }))} title="النوع">
-                                    <option value="MATERIAL">خامة / مستلزم تصنيع</option>
-                                    <option value="FINAL_PRODUCT">منتج نهائي</option>
-                                </select>
+                <div className="modal-overlay">
+                    <div className="modal-content glass-panel" style={{ maxWidth: '500px' }}>
+                        <h3 className="text-success">+ إضافة صنف</h3>
+                        <form onSubmit={handleAdd} className="modal-form-grid">
+                            <div className="form-group">
+                                <label>الاسم</label>
+                                <input type="text" className="input-glass" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} required />
                             </div>
-                            <div><label htmlFor="add_name">اسم الصنف</label><input id="add_name" type="text" className="input-glass" value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} required title="اسم الصنف" /></div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div><label htmlFor="add_stock">الكمية الابتدائية</label><input id="add_stock" type="number" step="any" min="0" className="input-glass" value={addForm.stock} onChange={e => setAddForm(f => ({ ...f, stock: e.target.value }))} required title="الكمية الابتدائية" /></div>
-                                <div><label htmlFor="add_unit">وحدة القياس</label><input id="add_unit" type="text" className="input-glass" value={addForm.unit} onChange={e => setAddForm(f => ({ ...f, unit: e.target.value }))} required title="وحدة القياس" /></div>
+                            <div className="form-row-grid">
+                                <div className="form-group">
+                                    <label>الكمية</label>
+                                    <input type="number" className="input-glass" value={addForm.stock} onChange={e => setAddForm(f => ({ ...f, stock: e.target.value }))} required />
+                                </div>
+                                <div className="form-group">
+                                    <label>الوحدة</label>
+                                    <input type="text" className="input-glass" value={addForm.unit} onChange={e => setAddForm(f => ({ ...f, unit: e.target.value }))} required />
+                                </div>
                             </div>
-                            <div><label htmlFor="add_category">التصنيف (اختياري)</label><input id="add_category" type="text" className="input-glass" value={addForm.category} onChange={e => setAddForm(f => ({ ...f, category: e.target.value }))} title="التصنيف" placeholder="حديد، ستانلس، أخشاب.." /></div>
-                            <div style={{ display: 'flex', gap: '12px', marginTop: '8px', justifyContent: 'flex-end' }}>
-                                <button type="button" onClick={() => setShowAdd(false)} style={{ padding: '10px 20px', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#ccc', borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
-                                <button type="submit" className="btn-primary" style={{ padding: '10px 24px' }}>✅ إضافة للمخزن</button>
+                            <div className="modal-actions">
+                                <button type="button" onClick={() => setShowAdd(false)} className="btn-modern btn-outline">إلغاء</button>
+                                <button type="submit" className="btn-modern btn-primary">إضافة</button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
+
+            {showCatMgr && (
+                <div className="modal-overlay">
+                    <div className="modal-content glass-panel" style={{ maxWidth: '760px' }}>
+                        <div className="modal-header">
+                            <h3 className="text-orange">🔧 إدارة الأقسام</h3>
+                            <button onClick={() => setShowCatMgr(false)} className="close-btn">✕</button>
+                        </div>
+                        <div className="workshop-form-box">
+                            <div className="ws-form-inline">
+                                <input type="text" className="input-glass ws-flex" value={wsForm.name} onChange={e => setWsForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الصنف.." />
+                                <button onClick={wsAddItem} className="btn-modern btn-primary btn-brown">إضافة</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style jsx>{`
+                .cursor-pointer { cursor: pointer; }
+                .hidden-input { display: none; }
+                .btn-brown { background: #8d6e63 !important; }
+                .text-orange { color: #ffa726; }
+                .text-success { color: #66bb6a; }
+                .text-primary { color: #29b6f6; }
+                .full-width { width: 100%; }
+                
+                .alerts-container { margin-bottom: 1.5rem; background: rgba(227,94,53,0.06); border: 1px solid rgba(227,94,53,0.25); border-radius: 14px; padding: 1.2rem; }
+                .alerts-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+                .alerts-title-group { display: flex; align-items: center; gap: 10px; }
+                .alert-icon { font-size: 1.3rem; }
+                .alert-count-title { margin: 0; color: #E35E35; font-size: 0.95rem; }
+                .alert-subtitle { margin: 0; font-size: 0.78rem; color: #888; }
+                .alert-close-btn { background: transparent; border: none; color: #888; font-size: 1.2rem; cursor: pointer; }
+                .alerts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+                .alert-card { background: rgba(0,0,0,0.2); border-radius: 10px; padding: 12px; border: 1px solid rgba(227,94,53,0.15); }
+                .alert-card-info { display: flex; justify-content: space-between; margin-bottom: 8px; }
+                .alert-item-name { font-weight: bold; color: #fff; font-size: 0.88rem; }
+                .alert-item-category { font-size: 0.75rem; color: #888; }
+                .alert-badge { padding: 2px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: bold; }
+                .alert-badge.low-stock { background: rgba(255,167,38,0.2); color: #ffa726; }
+                .alert-badge.out-of-stock { background: rgba(227,94,53,0.2); color: #E35E35; }
+                .alert-progress-bg { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 8px; }
+                .alert-progress-fill { height: 100%; border-radius: 2px; background: #ffa726; }
+                .alert-progress-fill.empty { background: #E35E35; }
+                .alert-actions-btns { display: flex; gap: 6px; }
+                .order-now-btn { flex: 1; text-align: center; padding: 4px; background: rgba(227,94,53,0.15); border: 1px solid rgba(227,94,53,0.3); color: #E35E35; border-radius: 6px; text-decoration: none; font-size: 0.75rem; }
+                .dismiss-alert-btn { padding: 4px 8px; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #888; border-radius: 6px; font-size: 0.75rem; cursor: pointer; }
+                .reshow-alerts-btn { margin-bottom: 1rem; padding: 8px 16px; background: rgba(227,94,53,0.1); border: 1px solid rgba(227,94,53,0.3); color: #E35E35; border-radius: 8px; cursor: pointer; }
+
+                .stats-cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 1.5rem; }
+                .inventory-stat-card { background: rgba(255,255,255,0.03); border-radius: 12px; padding: 15px; text-align: center; }
+                .stat-val { font-size: 1.8rem; font-weight: bold; }
+                .stat-label { font-size: 0.8rem; color: #888; margin-top: 4px; }
+
+                .filter-tabs-bar { display: flex; gap: 8px; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
+                .filter-tab-btn { padding: 8px 16px; border-radius: 10px; font-weight: bold; font-size: 0.9rem; border: 1px solid transparent; }
+                .cat-filter-select { padding: 8px; min-width: 150px; }
+                .item-search-input { flex: 1; min-width: 200px; max-width: 300px; }
+                .results-count { font-size: 0.85rem; color: #888; }
+
+                .main-inventory-panel, .audit-panel { padding: 1.5rem; }
+                .audit-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+                .audit-filters-bar { display: flex; gap: 10px; align-items: center; }
+                .low-stock-row { background: rgba(227,94,53,0.05) !important; }
+
+                .pagination-wrapper { display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; padding: 1.5rem; background: rgba(255,255,255,0.02); border-radius: 16px; border: 1px solid var(--border-color); }
+                .page-size-selector { display: flex; gap: 10px; align-items: center; }
+                .ps-label { font-size: 0.85rem; color: #888; }
+                .ps-dropdown { background: transparent; color: var(--primary-color); border: none; font-weight: bold; cursor: pointer; }
+                .page-nav { display: flex; gap: 15px; align-items: center; }
+                .page-indicator { padding: 6px 12px; background: rgba(227,94,53,0.1); border-radius: 8px; color: var(--primary-color); font-weight: bold; }
+
+                .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+                .modal-content { width: 100%; border-radius: 16px; border: 1px solid var(--border-color); padding: 2rem; background: #1a1c22; }
+                .modal-form-grid { display: flex; flex-direction: column; gap: 15px; margin-top: 1.5rem; }
+                .form-group { display: flex; flex-direction: column; gap: 5px; }
+                .form-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+                .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2rem; }
+                .btn-outline { background: transparent; border: 1px solid #444; color: #888; }
+                .close-btn { background: none; border: none; color: #ff5252; font-size: 1.5rem; cursor: pointer; }
+                .workshop-form-box { background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 10px; border: 1px solid #333; }
+                .ws-form-inline { display: flex; gap: 10px; }
+                .ws-flex { flex: 1; }
+                @media (max-width: 768px) {
+                    .audit-header-row {
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 15px;
+                    }
+                    .audit-filters-bar {
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 10px;
+                    }
+                    .filter-tabs-bar {
+                        flex-direction: column;
+                        align-items: stretch;
+                    }
+                    .filter-tabs-bar .btn-modern {
+                        width: 100%;
+                    }
+                    .pagination-wrapper {
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 15px;
+                    }
+                    .page-size-selector, .page-nav {
+                        justify-content: space-between;
+                        width: 100%;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

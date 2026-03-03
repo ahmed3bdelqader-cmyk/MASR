@@ -20,7 +20,7 @@ export default function SalesPage() {
 
         try {
             const u = JSON.parse(localStorage.getItem('erp_user') || '{}');
-            setIsAdmin(u.role === 'ADMIN' || !u.role);
+            setIsAdmin((u?.role || '').toUpperCase() === 'ADMIN' || !u?.role);
         } catch { }
 
         const fetchNextInv = async () => {
@@ -84,7 +84,7 @@ export default function SalesPage() {
     const total = subtotal - discountVal + taxVal;
 
     return (
-        <div className="animate-fade-in">
+        <div className="unified-container animate-fade-in">
             <header style={{ marginBottom: '2rem' }}>
                 <h1>إصدار الفواتير الاحترافية والمبيعات</h1>
                 <p>إنشاء وتسجيل فواتير العملاء مع خصم المخزون أوتوماتيكياً وطباعة PDF/Excel مستقبلاً</p>
@@ -119,7 +119,10 @@ export default function SalesPage() {
                                 <label htmlFor={`prod-${idx}`}>المنتج المباع</label>
                                 <select id={`prod-${idx}`} className="input-glass" value={it.productId} onChange={e => handleProductChange(idx, e.target.value)} required title="اختر المنتج">
                                     <option value="">- اختر منتج -</option>
-                                    {products.map((p: any) => <option key={p.id} value={p.id}>{p.name} (متوفر: {p.stock})</option>)}
+                                    {products.map((p: any) => {
+                                        const shortName = p.name.length > 70 ? p.name.substring(0, 70) + '...' : p.name;
+                                        return <option key={p.id} value={p.id} title={p.name}>{shortName} (متوفر: {p.stock})</option>;
+                                    })}
                                 </select>
                             </div>
                             <div style={{ width: '120px' }}>

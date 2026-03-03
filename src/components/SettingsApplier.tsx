@@ -27,6 +27,8 @@ export default function SettingsApplier() {
             else if (s.textColor) root.style.setProperty('--text-muted', s.textColor === '#ffffff' ? '#919398' : '#555555');
             if (s.btnText) root.style.setProperty('--btn-text', s.btnText);
             if (s.fontFamily) root.style.setProperty('--font-main', s.fontFamily);
+            if (s.cardShadow) root.style.setProperty('--card-shadow', s.cardShadow);
+            if (s.cardHoverShadow) root.style.setProperty('--card-hover-shadow', s.cardHoverShadow);
             if (s.fontSize) document.body.style.fontSize = (Number(s.fontSize) / 100) * 16 + 'px';
             if (s.appName) document.title = s.appName + ' | ERP';
 

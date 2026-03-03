@@ -11,18 +11,24 @@ const SYM = (() => { try { return JSON.parse(localStorage.getItem('erp_settings'
 export default function ProductsPage() {
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
+    const [mounted, setMounted] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize] = useState(10);
+    const [pageSize, setPageSize] = useState<'ALL' | number>(5);
     const [formData, setFormData] = useState({ code: '', name: '', price: '', stock: '', description: '', height: '', width: '', depth: '' });
     const [editId, setEditId] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState(false);
 
     useEffect(() => {
+        setMounted(true);
         fetchProducts();
+
+        const saved = localStorage.getItem('erp_products_pageSize');
+        if (saved) setPageSize(saved === 'ALL' ? 'ALL' : parseInt(saved, 10));
+
         try {
             const u = JSON.parse(localStorage.getItem('erp_user') || '{}');
-            setIsAdmin(u.role === 'ADMIN' || !u.role);
+            setIsAdmin((u?.role || '').toUpperCase() === 'ADMIN' || !u?.role);
         } catch { }
     }, []);
 
@@ -30,7 +36,7 @@ export default function ProductsPage() {
         try {
             const res = await fetch('/api/products');
             const data = await res.json();
-            setProducts(data);
+            setProducts(Array.isArray(data) ? data : []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -81,6 +87,13 @@ export default function ProductsPage() {
         } catch { alert('خطأ في الاتصال'); }
     };
 
+    const handlePageSizeChange = (val: string) => {
+        const newSize = val === 'ALL' ? 'ALL' : parseInt(val, 10);
+        setPageSize(newSize);
+        localStorage.setItem('erp_products_pageSize', val);
+        setCurrentPage(1);
+    };
+
     // ── Filtering and Pagination ──────────────────────────────────────────────
     const filteredProducts = useMemo(() => {
         return products.filter(p =>
@@ -90,8 +103,9 @@ export default function ProductsPage() {
         );
     }, [products, searchTerm]);
 
-    const totalPages = Math.ceil(filteredProducts.length / pageSize);
+    const totalPages = pageSize === 'ALL' ? 1 : Math.ceil(filteredProducts.length / pageSize);
     const paginatedProducts = useMemo(() => {
+        if (pageSize === 'ALL') return filteredProducts;
         const start = (currentPage - 1) * pageSize;
         return filteredProducts.slice(start, start + pageSize);
     }, [filteredProducts, currentPage, pageSize]);
@@ -157,124 +171,223 @@ export default function ProductsPage() {
     const sym = SYM();
 
     return (
-        <div className="animate-fade-in" style={{ paddingBottom: '3rem' }}>
-            <header style={{ marginBottom: '2rem' }}>
-                <h1 style={{ color: 'var(--primary-color)' }}>🏷️ الكتالوج والمنتجات</h1>
-                <p style={{ color: '#919398' }}>إدارة {products.length} موديل | القيمة التقديرية للمخزون: <span style={{ color: '#fff' }}>{products.reduce((a, b) => a + (b.price * b.stock), 0).toLocaleString()} {sym}</span></p>
+        <div className="unified-container animate-fade-in" style={{ paddingBottom: '3rem' }}>
+            <header className="page-header">
+                <div>
+                    <h1 className="page-title">🏷️ الكتالوج والمنتجات</h1>
+                    <p className="page-subtitle">
+                        إدارة <strong style={{ color: 'var(--text-primary)' }}>{products.length}</strong> موديل | القيمة التقديرية للمخزون:{" "}
+                        <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>
+                            {mounted ? products.reduce((a, b) => a + (b.price * b.stock), 0).toLocaleString('en-US') : '0'} {mounted ? SYM() : 'ج.م'}
+                        </span>
+                    </p>
+                </div>
             </header>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? 'minmax(300px, 350px) 1fr' : '1fr', gap: '2rem', alignItems: 'start' }}>
-                {/* Form Section */}
-                {isAdmin && (
-                    <div className="glass-panel" style={{ position: 'sticky', top: '20px' }}>
-                        <h3 style={{ marginBottom: '1.2rem', color: editId ? '#ffa726' : '#fff' }}>
-                            {editId ? '✏️ تعديل المنتج' : '✨ إضافة موديل'}
-                        </h3>
-                        <form onSubmit={handleCreateOrUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                <div style={{ flex: 1 }}><label htmlFor="p_code">الكود</label><input id="p_code" type="text" className="input-glass" value={formData.code} onChange={e => setFormData({ ...formData, code: e.target.value })} required title="كود المنتج" /></div>
-                                <div style={{ flex: 2 }}><label htmlFor="p_name">اسم الموديل</label><input id="p_name" type="text" className="input-glass" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required title="اسم الموديل" /></div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                                <div><label htmlFor="p_h">طول</label><input id="p_h" type="number" className="input-glass" value={formData.height} onChange={e => setFormData({ ...formData, height: e.target.value })} title="الارتفاع" /></div>
-                                <div><label htmlFor="p_w">عرض</label><input id="p_w" type="number" className="input-glass" value={formData.width} onChange={e => setFormData({ ...formData, width: e.target.value })} title="العرض" /></div>
-                                <div><label htmlFor="p_d">عمق</label><input id="p_d" type="number" className="input-glass" value={formData.depth} onChange={e => setFormData({ ...formData, depth: e.target.value })} title="العمق" /></div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                                <div><label htmlFor="p_prc">السعر ({sym})</label><input id="p_prc" type="number" className="input-glass" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} required title="السعر" /></div>
-                                <div><label htmlFor="p_stk">الرصيد</label><input id="p_stk" type="number" className="input-glass" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} title="الرصيد" /></div>
-                            </div>
-                            <div><label htmlFor="p_desc">الوصف</label><textarea id="p_desc" className="input-glass" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} title="الوصف" /></div>
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem' }}>
-                                <button type="submit" className="btn-primary" style={{ flex: 2, background: editId ? '#ffa726' : 'var(--primary-color)' }}>{editId ? 'حفظ' : 'إضافة'}</button>
-                                {editId && <button type="button" onClick={() => { setEditId(null); setFormData({ code: '', name: '', price: '', stock: '', description: '', height: '', width: '', depth: '' }) }} className="btn-secondary" style={{ flex: 1 }}>إغلاق</button>}
-                            </div>
-                        </form>
-                    </div>
-                )}
+            {/* ── Main Grid: sidebar (form) + content (table) ── */}
+            <div className="reports-grid" style={{ alignItems: 'start' }}>
 
-                {/* Table Section */}
-                <div className="glass-panel" style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
-                        <div style={{ flex: 1, minWidth: '250px' }}>
-                            <label htmlFor="p_search" className="sr-only">ابحث عن موديل</label>
-                            <input id="p_search" type="text" className="input-glass" placeholder="🔍 ابحث بالكود أو الاسم..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} title="البحث في الكتالوج" />
-                        </div>
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <button onClick={exportToCSV} className="btn-secondary" style={{ color: '#29b6f6', borderColor: 'rgba(41, 182, 246, 0.3)' }}>
-                                📥 تصدير
-                            </button>
-                            {isAdmin && (
-                                <label className="btn-secondary" style={{ color: '#66bb6a', borderColor: 'rgba(102, 187, 106, 0.3)', margin: 0 }}>
-                                    📤 استيراد
-                                    <input type="file" accept=".csv" onChange={handleImportCSV} style={{ display: 'none' }} />
-                                </label>
-                            )}
-                        </div>
-                    </div>
+                {/* ─────────────── RIGHT SIDEBAR ─────────────── */}
+                <div className="glass-panel report-sidebar-menu" style={{ position: 'sticky', top: '20px' }}>
 
-                    {loading ? <p>جاري التحميل...</p> : (
+                    {/* Add / Edit Form — admin only */}
+                    {isAdmin ? (
                         <>
-                            <div style={{ overflowX: 'auto' }}>
-                                <table className="table-glass" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px' }}>
-                                    <thead>
-                                        <tr>
-                                            <th>الكود</th>
-                                            <th>المنتج</th>
-                                            <th>المقاسات</th>
-                                            <th>السعر</th>
-                                            <th>المخزون</th>
-                                            {isAdmin && <th>إجراءات</th>}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {paginatedProducts.map(p => (
-                                            <tr key={p.id} style={{ background: 'rgba(255,255,255,0.02)' }}>
-                                                <td style={{ padding: '12px' }}><code style={{ color: '#888' }}>{p.code}</code></td>
-                                                <td style={{ padding: '12px' }}>
-                                                    <div style={{ fontWeight: 700 }}>{p.name}</div>
-                                                    {p.description && <div style={{ fontSize: '0.7rem', color: '#666' }}>{p.description}</div>}
-                                                </td>
-                                                <td style={{ padding: '12px', fontSize: '0.85rem' }}>{p.height ? `${p.height}×${p.width}×${p.depth}` : '-'}</td>
-                                                <td style={{ padding: '12px', fontWeight: 800, color: 'var(--primary-color)' }}>{Number(p.price).toLocaleString()} {sym}</td>
-                                                <td style={{ padding: '12px' }}><span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '8px' }}>{p.stock}</span></td>
-                                                <td style={{ padding: '12px' }}>
-                                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                                        <button
-                                                            onClick={() => handleEditClick(p)}
-                                                            className="btn-secondary btn-sm"
-                                                            style={{ color: '#ffa726', borderColor: 'rgba(255, 167, 38, 0.2)' }}
-                                                            title="تعديل"
-                                                        >
-                                                            ✏️
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDelete(p.id, p.name)}
-                                                            className="btn-danger btn-sm"
-                                                            title="حذف"
-                                                        >
-                                                            🗑️
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                {filteredProducts.length === 0 && <p style={{ textAlign: 'center', padding: '2rem', color: '#555' }}>لا توجد منتجات تطابق بحثك.</p>}
-                            </div>
-
-                            {totalPages > 1 && (
-                                <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '1.5rem' }}>
-                                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} className="btn-secondary" style={{ opacity: currentPage === 1 ? 0.3 : 1 }}>السابق</button>
-                                    <span style={{ alignSelf: 'center', fontSize: '0.9rem' }}>{currentPage} / {totalPages}</span>
-                                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} className="btn-secondary" style={{ opacity: currentPage === totalPages ? 0.3 : 1 }}>التالي</button>
+                            <h4 style={{ margin: '0 0 14px', color: editId ? '#ffa726' : '#919398', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                {editId ? '✏️ تعديل الموديل' : '✨ إضافة موديل جديد'}
+                            </h4>
+                            <form onSubmit={handleCreateOrUpdate} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {/* Code + Name */}
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <div style={{ flex: '0 0 80px' }}>
+                                        <label htmlFor="p_code" style={{ fontSize: '0.75rem', color: '#919398', display: 'block', marginBottom: '4px' }}>الكود</label>
+                                        <input id="p_code" type="text" className="input-glass" value={formData.code} onChange={e => setFormData({ ...formData, code: e.target.value })} required />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <label htmlFor="p_name" style={{ fontSize: '0.75rem', color: '#919398', display: 'block', marginBottom: '4px' }}>اسم الموديل</label>
+                                        <input id="p_name" type="text" className="input-glass" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+                                    </div>
                                 </div>
-                            )}
+
+                                {/* Dimensions */}
+                                <div>
+                                    <label style={{ fontSize: '0.75rem', color: '#919398', display: 'block', marginBottom: '4px' }}>المقاسات (ط × ع × ع)</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                                        <input id="p_h" type="number" className="input-glass" placeholder="طول" value={formData.height} onChange={e => setFormData({ ...formData, height: e.target.value })} />
+                                        <input id="p_w" type="number" className="input-glass" placeholder="عرض" value={formData.width} onChange={e => setFormData({ ...formData, width: e.target.value })} />
+                                        <input id="p_d" type="number" className="input-glass" placeholder="عمق" value={formData.depth} onChange={e => setFormData({ ...formData, depth: e.target.value })} />
+                                    </div>
+                                </div>
+
+                                {/* Price + Stock */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                    <div>
+                                        <label htmlFor="p_prc" style={{ fontSize: '0.75rem', color: '#919398', display: 'block', marginBottom: '4px' }}>السعر ({sym})</label>
+                                        <input id="p_prc" type="number" className="input-glass" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} required />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="p_stk" style={{ fontSize: '0.75rem', color: '#919398', display: 'block', marginBottom: '4px' }}>الرصيد</label>
+                                        <input id="p_stk" type="number" className="input-glass" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
+                                    </div>
+                                </div>
+
+                                {/* Description */}
+                                <div>
+                                    <label htmlFor="p_desc" style={{ fontSize: '0.75rem', color: '#919398', display: 'block', marginBottom: '4px' }}>الوصف</label>
+                                    <textarea id="p_desc" className="input-glass" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} style={{ resize: 'none' }} />
+                                </div>
+
+                                {/* Actions */}
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                                    <button type="submit" className="btn-modern btn-primary" style={{ flex: 1, background: editId ? '#ffa726' : undefined, boxShadow: editId ? '0 4px 14px rgba(255,167,38,0.3)' : undefined }}>
+                                        {editId ? '💾 حفظ التعديل' : '➕ إضافة'}
+                                    </button>
+                                    {editId && (
+                                        <button type="button" className="btn-modern btn-secondary" style={{ flex: '0 0 auto', width: '42px' }}
+                                            onClick={() => { setEditId(null); setFormData({ code: '', name: '', price: '', stock: '', description: '', height: '', width: '', depth: '' }); }}>
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+                            </form>
+
+                            {/* Import / Export divider */}
+                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', margin: '16px 0 12px' }} />
+                            <h4 style={{ margin: '0 0 10px', color: '#919398', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>استيراد وتصدير</h4>
                         </>
+                    ) : (
+                        <h4 style={{ margin: '0 0 14px', color: '#919398', fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>الإجراءات</h4>
                     )}
+
+                    {/* Export CSV */}
+                    <button onClick={exportToCSV} className="btn-modern btn-secondary"
+                        style={{ width: '100%', justifyContent: 'center', color: '#29b6f6', borderColor: 'rgba(41,182,246,0.25)', marginBottom: '8px' }}>
+                        📥 تصدير الكتالوج CSV
+                    </button>
+
+                    {/* Import CSV */}
+                    {isAdmin && (
+                        <label className="btn-modern btn-secondary"
+                            style={{ width: '100%', justifyContent: 'center', color: '#66bb6a', borderColor: 'rgba(102,187,106,0.25)', display: 'flex', alignItems: 'center', cursor: 'pointer', boxSizing: 'border-box' }}>
+                            📤 استيراد من CSV
+                            <input type="file" accept=".csv" onChange={handleImportCSV} style={{ display: 'none' }} />
+                        </label>
+                    )}
+                </div>
+
+                {/* ─────────────── MAIN CONTENT ─────────────── */}
+                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+                    {/* Search bar */}
+                    <div className="glass-panel" style={{ padding: '1rem 1.25rem' }}>
+                        <label htmlFor="p_search" style={{ fontSize: '0.75rem', color: '#919398', display: 'block', marginBottom: '6px' }}>البحث في الكتالوج</label>
+                        <input
+                            id="p_search"
+                            type="text"
+                            className="input-glass"
+                            placeholder="🔍 ابحث بالكود أو اسم الموديل أو الوصف..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            style={{ width: '100%', boxSizing: 'border-box' }}
+                        />
+                    </div>
+
+                    {/* Products Table */}
+                    <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                        {loading ? (
+                            <p style={{ textAlign: 'center', color: '#555', padding: '3rem' }}>⏳ جاري تحميل الكتالوج...</p>
+                        ) : (
+                            <>
+                                <div className="smart-table-container">
+                                    <table className="smart-table">
+                                        <thead>
+                                            <tr>
+                                                <th className="hide-on-tablet text-right">الكود</th>
+                                                <th className="text-right">الموديل</th>
+                                                <th className="hide-on-tablet text-center">المقاسات</th>
+                                                <th className="text-center">السعر</th>
+                                                <th className="text-center">المخزون</th>
+                                                {isAdmin && <th className="text-center">إجراءات</th>}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {paginatedProducts.map(p => (
+                                                <tr key={p.id}>
+                                                    <td className="hide-on-tablet" data-label="الكود">
+                                                        <code className="text-primary font-bold p-1 bg-dark">{p.code}</code>
+                                                    </td>
+                                                    <td data-label="الموديل">
+                                                        <div className="mobile-card-title">{p.name}</div>
+                                                        {p.description && <div className="text-muted text-sm mt-1">{p.description}</div>}
+                                                    </td>
+                                                    <td className="hide-on-tablet text-center text-sm" data-label="المقاسات">
+                                                        {p.height ? `${p.height}×${p.width}×${p.depth}` : <span>—</span>}
+                                                    </td>
+                                                    <td className="text-center" data-label="السعر">
+                                                        <div className="mobile-card-balance balance-green">
+                                                            {Number(p.price).toLocaleString('en-US')} <span className="text-sm font-normal">{sym}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="text-center" data-label="المخزون">
+                                                        <span className={`sh-badge ${p.stock <= 5 ? 'unpaid' : 'partial'}`}>
+                                                            {p.stock}
+                                                        </span>
+                                                    </td>
+                                                    {isAdmin && (
+                                                        <td className="text-center" data-label="إجراءات">
+                                                            <div className="action-bar-cell mobile-card-actions">
+                                                                <button onClick={() => handleEditClick(p)} className="btn-modern btn-secondary btn-sm" title="تعديل">✏️</button>
+                                                                <button onClick={() => handleDelete(p.id, p.name)} className="btn-modern btn-danger btn-sm" title="حذف">🗑️</button>
+                                                            </div>
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    {filteredProducts.length === 0 && (
+                                        <div style={{ textAlign: 'center', padding: '3rem', color: '#555' }}>
+                                            <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🔍</div>
+                                            لا توجد موديلات تطابق بحثك.
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Pagination */}
+                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '2rem', flexWrap: 'wrap-reverse', gap: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '5px 15px', borderRadius: '20px' }}>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>عدد النتائج:</span>
+                                        <select
+                                            value={pageSize}
+                                            onChange={(e) => handlePageSizeChange(e.target.value)}
+                                            style={{ padding: '0px', fontSize: '0.9rem', width: 'auto', border: 'none', background: 'transparent', color: 'var(--primary-color)', fontWeight: 'bold', cursor: 'pointer', outline: 'none' }}
+                                            aria-label="Items per page"
+                                        >
+                                            <option style={{ color: '#000' }} value={5}>5</option>
+                                            <option style={{ color: '#000' }} value={10}>10</option>
+                                            <option style={{ color: '#000' }} value={20}>20</option>
+                                            <option style={{ color: '#000' }} value={50}>50</option>
+                                            <option style={{ color: '#000' }} value="ALL">الكل</option>
+                                        </select>
+                                    </div>
+
+                                    {totalPages > 1 && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '15px', flex: '1 1 auto', maxWidth: '350px' }}>
+                                            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn-modern btn-secondary" style={{ opacity: currentPage === 1 ? 0.3 : 1, padding: '8px 15px', flex: 1, justifyContent: 'center' }}>&rarr; السابق</button>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '60px', background: 'rgba(227,94,53,0.1)', color: 'var(--primary-color)', borderRadius: '10px', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.9rem', direction: 'ltr', whiteSpace: 'nowrap', border: '1px solid rgba(227,94,53,0.2)' }}>
+                                                {currentPage} / {totalPages}
+                                            </div>
+                                            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="btn-modern btn-secondary" style={{ opacity: currentPage === totalPages ? 0.3 : 1, padding: '8px 15px', flex: 1, justifyContent: 'center' }}>التالي &larr;</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
+
+

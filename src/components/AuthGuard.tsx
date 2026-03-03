@@ -54,7 +54,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
                 const userRaw = localStorage.getItem('erp_user');
                 const user = userRaw ? JSON.parse(userRaw) : { role: 'ADMIN' };
-                const role = user.role || 'ADMIN';
+                const role = (user.role || 'ADMIN').toUpperCase();
 
                 if (role === 'ADMIN') return; // Admin bypass
 

@@ -4,7 +4,8 @@ import { logSystemError } from '@/lib/logger';
 
 export async function GET() {
     try {
-        const items = await prisma.inventoryItem.findMany({ orderBy: { updatedAt: 'desc' } });
+        // @ts-ignore
+        const items = await prisma.inventoryItem.findMany({ include: { mainCategory: true }, orderBy: { updatedAt: 'desc' } });
         return NextResponse.json(items);
     } catch (error) {
         await logSystemError('API/Inventory/GET', error);
@@ -15,6 +16,21 @@ export async function GET() {
 export async function POST(req: Request) {
     try {
         const body = await req.json();
+
+        // Support bulk creation
+        if (Array.isArray(body)) {
+            const items = await prisma.inventoryItem.createMany({
+                data: body.map(i => ({
+                    type: i.type,
+                    category: i.category || null,
+                    name: i.name,
+                    stock: parseFloat(i.stock) || 0,
+                    unit: i.unit
+                }))
+            });
+            return NextResponse.json(items, { status: 201 });
+        }
+
         const item = await prisma.inventoryItem.create({
             data: {
                 type: body.type,

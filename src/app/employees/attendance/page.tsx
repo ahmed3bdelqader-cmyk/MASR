@@ -2,12 +2,21 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
+import { Search, Building2 } from 'lucide-react';
+import PrintReportBtn from '@/components/PrintReportBtn';
+
 export default function AttendancePage() {
     const [dateStr, setDateStr] = useState(new Date().toISOString().split('T')[0]);
     const [records, setRecords] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState('');
+
+    // --- NEW: Search, Filter, Pagination State ---
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterDepartment, setFilterDepartment] = useState('ALL');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState<'ALL' | number>(5);
 
     // --- NEW: Monthly Report State ---
     const [reportModal, setReportModal] = useState<any>(null);
@@ -23,8 +32,14 @@ export default function AttendancePage() {
     const [reportData, setReportData] = useState<any>(null);
     const [fetchingReport, setFetchingReport] = useState(false);
 
+    // --- NEW: Edit Modal for Mobile ---
+    const [editModalEmpId, setEditModalEmpId] = useState<string | null>(null);
+    const editEmp = records.find(r => r.id === editModalEmpId);
+
     useEffect(() => {
         fetchData();
+        const saved = localStorage.getItem('erp_attendance_pageSize');
+        if (saved) setPageSize(saved === 'ALL' ? 'ALL' : parseInt(saved, 10));
     }, [dateStr]);
 
     const fetchData = async () => {
@@ -120,6 +135,10 @@ export default function AttendancePage() {
         const endTime = new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString();
 
         setRecords(prev => prev.map(rec => {
+            const matchesSearch = rec.name.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesDept = filterDepartment === 'ALL' || rec.department === filterDepartment;
+            if (!(matchesSearch && matchesDept)) return rec;
+
             const isPresent = (status === 'PRESENT' || status === 'LATE');
             const checkIn = isPresent ? (rec.checkIn || startTime) : null;
             const checkOut = isPresent ? (rec.checkOut || endTime) : null;
@@ -132,6 +151,13 @@ export default function AttendancePage() {
 
             return { ...rec, status, checkIn, checkOut, hoursWorked };
         }));
+    };
+
+    const handlePageSizeChange = (val: string) => {
+        const newSize = val === 'ALL' ? 'ALL' : parseInt(val, 10);
+        setPageSize(newSize);
+        localStorage.setItem('erp_attendance_pageSize', val);
+        setCurrentPage(1);
     };
 
     const fetchMonthlyReport = async (empId: string) => {
@@ -147,298 +173,341 @@ export default function AttendancePage() {
         }
     };
 
-    const printMonthlyReport = () => {
-        if (!reportData) return;
-        const win = window.open('', '_blank');
-        if (!win) return;
-
-        const { employee, attendance } = reportData;
-        const s = JSON.parse(localStorage.getItem('erp_settings') || '{}');
-        const t = JSON.parse(localStorage.getItem('erp_print_template') || '{}');
-        const accentColor = t.accentColor || s.primaryColor || '#f59e0b';
-
-        const stats = {
-            present: attendance.filter((a: any) => a.status === 'PRESENT' || a.status === 'LATE').length,
-            absent: attendance.filter((a: any) => a.status === 'ABSENT').length,
-            leaves: attendance.filter((a: any) => a.status.startsWith('LEAVE')).length,
-            totalHours: attendance.reduce((s: number, a: any) => s + (a.hoursWorked || 0), 0)
-        };
-
-        const rows = attendance.map((a: any) => {
-            const statusMap: any = { PRESENT: 'حاضر', ABSENT: 'غائب', LATE: 'متأخر', LEAVE: 'إجازة', LEAVE_SICK: 'مرضي', LEAVE_UNPAID: 'بدون أجر' };
-            return `
-                <tr>
-                    <td style="text-align:center">${a.dateStr}</td>
-                    <td style="text-align:center">${statusMap[a.status] || a.status}</td>
-                    <td style="text-align:center">${a.checkIn ? new Date(a.checkIn).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                    <td style="text-align:center">${a.checkOut ? new Date(a.checkOut).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                    <td style="text-align:center">${a.hoursWorked || '-'}</td>
-                    <td>${a.note || ''}</td>
-                </tr>
-            `;
-        }).join('');
-
-        win.document.write(`
-            <html dir="rtl">
-            <head>
-                <title>تقرير حضور وانصراف - ${employee.name}</title>
-                <style>
-                    body { font-family: Tahoma, sans-serif; padding: 30px; font-size: 0.9rem; }
-                    .header { display: flex; justify-content: space-between; border-bottom: 2px solid ${accentColor}; padding-bottom: 15px; margin-bottom: 20px; }
-                    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
-                    .stat-card { border: 1px solid #ddd; padding: 10px; text-align: center; border-radius: 5px; }
-                    table { width: 100%; border-collapse: collapse; margin-block: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 10px; text-align: right; }
-                    th { background: #f5f5f5; color: #333; }
-                </style>
-            </head>
-            <body onload="window.print()">
-                <div class="header">
-                    <div>
-                        <h2 style="color:${accentColor};margin:0">${s.appName || 'نظام إدارة المصنع'}</h2>
-                        <h3 style="margin:5px 0">تقرير الحضور والانصراف</h3>
-                        <p>من: ${reportStartDate} إلى: ${reportEndDate}</p>
-                    </div>
-                    <div style="text-align:left">
-                        <p><strong>الموظف:</strong> ${employee.name}</p>
-                        <p><strong>كود:</strong> ${employee.employeeId}</p>
-                        <p><strong>الإدارة:</strong> ${employee.department || '-'}</p>
-                    </div>
-                </div>
-                
-                <div class="stats-grid">
-                    <div class="stat-card"><div>أيام الحضور</div><strong>${stats.present}</strong></div>
-                    <div class="stat-card"><div>أيام الغياب</div><strong>${stats.absent}</strong></div>
-                    <div class="stat-card"><div>أيام الإجازات</div><strong>${stats.leaves}</strong></div>
-                    <div class="stat-card"><div>إجمالي الساعات</div><strong>${stats.totalHours.toFixed(1)} س</strong></div>
-                </div>
-
-                <table>
-                    <thead>
-                        <tr>
-                            <th>التاريخ</th>
-                            <th>الحالة</th>
-                            <th>الحضور</th>
-                            <th>الانصراف</th>
-                            <th>ساعات العمل</th>
-                            <th>ملاحظات</th>
-                        </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                </table>
-            </body>
-            </html>
-        `);
-        win.document.close();
-    };
+    // Derived state for Filtering & Pagination
+    const uniqueDepartments = Array.from(new Set(records.map(r => r.department).filter(Boolean)));
+    const filteredRecords = records.filter(emp => {
+        const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesDept = filterDepartment === 'ALL' || emp.department === filterDepartment;
+        return matchesSearch && matchesDept;
+    });
+    const totalPages = pageSize === 'ALL' ? 1 : Math.ceil(filteredRecords.length / (pageSize as number)) || 1;
+    let validCurrentPage = currentPage;
+    if (currentPage > totalPages) validCurrentPage = totalPages;
+    const paginatedRecords = React.useMemo(() => {
+        if (pageSize === 'ALL') return filteredRecords;
+        const start = (validCurrentPage - 1) * (pageSize as number);
+        return filteredRecords.slice(start, start + (pageSize as number));
+    }, [filteredRecords, validCurrentPage, pageSize]);
 
     return (
-        <div style={{ padding: '20px', minHeight: '100vh', background: '#0f1115', color: '#e2e8f0', direction: 'rtl' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div className="unified-container animate-fade-in" style={{ padding: '0 1rem' }}>
+            {/* --- Top Actions & Header --- */}
+            <header className="flex-between mb-6 bg-black/20 border border-white/10 rounded-2xl p-4 lg:p-6 shadow-lg shadow-black/20 mt-4">
                 <div>
-                    <h1 style={{ margin: 0, color: '#f59e0b' }}>⏱️ جدول الحضور والانصراف</h1>
-                    <p style={{ color: '#919398', margin: '5px 0' }}>تسجيل يوميات وحضور الموظفين لليوم المحدد</p>
+                    <h1 className="text-primary m-0 text-2xl lg:text-3xl font-bold flex items-center gap-2">
+                        ⏱️ الحضور والانصراف
+                    </h1>
+                    <p className="text-muted mt-2 mb-0 text-sm">تسجيل يومية الموظفين ومعدل الساعات</p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="flex gap-3">
                     <Link href="/employees">
-                        <button className="btn-secondary" style={{ padding: '8px 16px' }}>
-                            العودة لشؤون العاملين
-                        </button>
+                        <button className="btn-modern btn-secondary">👥 شؤون العاملين</button>
                     </Link>
-                    <button onClick={handleSave} disabled={saving} className="btn-primary" style={{ padding: '8px 20px' }}>
-                        {saving ? 'جاري الحفظ...' : '💾 حفظ يومية الحضور'}
+                    <button onClick={handleSave} disabled={saving} className="btn-modern btn-primary text-lg px-6 font-bold shadow-lg shadow-primary/20">
+                        {saving ? '⏳ جاري الحفظ...' : '💾 حفظ اليومية'}
                     </button>
                 </div>
+            </header>
+
+            <div className="flex flex-col gap-6">
+
+                {/* --- Controls Bar & Filters --- */}
+                <div className="glass-panel p-4 bg-gradient-to-r from-black/40 to-black/20 flex flex-col lg:flex-row gap-4 justify-between items-center">
+                    <div className="flex gap-4 flex-wrap items-center w-full lg:w-auto">
+                        <div className="flex flex-col">
+                            <label className="text-xs text-muted mb-1" htmlFor="attendance-date">تاريخ اليومية</label>
+                            <input
+                                id="attendance-date"
+                                type="date"
+                                className="input-glass text-lg py-2 text-white font-bold"
+                                value={dateStr}
+                                onChange={e => { setDateStr(e.target.value); setCurrentPage(1); }}
+                                style={{ width: '160px' }}
+                            />
+                        </div>
+                        <div className="flex flex-col flex-1 min-w-[150px]">
+                            <label className="text-xs text-muted mb-1" htmlFor="search-emp" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Search size={14} /> بحث باسم الموظف
+                            </label>
+                            <input
+                                id="search-emp"
+                                type="text"
+                                className="input-glass text-lg py-3 w-full text-white"
+                                placeholder="اكتب اسم الموظف..."
+                                value={searchQuery}
+                                onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                                style={{ borderRadius: '8px' }}
+                            />
+                        </div>
+                        <div className="flex flex-col flex-1 min-w-[150px] max-w-[200px]">
+                            <label className="text-xs text-muted mb-1" htmlFor="filter-dept" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Building2 size={14} /> القسم / الإدارة
+                            </label>
+                            <select
+                                id="filter-dept"
+                                className="input-glass text-lg py-3 w-full cursor-pointer text-white"
+                                value={filterDepartment}
+                                onChange={e => { setFilterDepartment(e.target.value); setCurrentPage(1); }}
+                                style={{ borderRadius: '8px' }}
+                            >
+                                <option value="ALL">الكل</option>
+                                {uniqueDepartments.map((dept: any) => (
+                                    <option key={dept} value={dept}>{dept}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full lg:w-auto mt-2 lg:mt-0 justify-end" style={{ flexWrap: 'wrap' }}>
+                        <button onClick={() => markAll('PRESENT')} className="btn-modern" style={{ background: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', color: '#34d399', padding: '10px 20px', fontSize: '1.1rem', fontWeight: 'bold', flex: '1 1 auto', textAlign: 'center' }}>✅ تحضير الكل</button>
+                        <button onClick={() => markAll('ABSENT')} className="btn-modern" style={{ background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)', color: '#f87171', padding: '10px 20px', fontSize: '1.1rem', fontWeight: 'bold', flex: '1 1 auto', textAlign: 'center' }}>❌ تغيب الكل</button>
+                    </div>
+                </div>
+
+                {msg && (
+                    <div className="animate-fade-in" style={{ padding: '12px', borderRadius: '12px', background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)', textAlign: 'center', fontWeight: 600 }}>
+                        {msg}
+                    </div>
+                )}
+
+                {/* --- Attendance Table / Grid --- */}
+                <div className="glass-panel p-2 sm:p-4 mb-6">
+                    {loading ? (
+                        <p className="text-center text-muted p-8 text-lg">⏳ جاري تحميل الكشوف...</p>
+                    ) : (
+                        <div className="smart-table-container">
+                            <table className="smart-table w-full">
+                                <thead>
+                                    <tr>
+                                        <th>الموظف</th>
+                                        <th className="text-center" style={{ width: '230px' }}>الحالة</th>
+                                        <th className="text-center" style={{ width: '130px' }}>الحضور</th>
+                                        <th className="text-center" style={{ width: '180px' }}>الانصراف</th>
+                                        <th className="text-center" style={{ width: '90px' }}>ساعات</th>
+                                        <th className="hide-on-tablet">ملاحظات</th>
+                                        <th className="text-center" style={{ width: '60px' }}>تقارير</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {paginatedRecords.length === 0 ? (
+                                        <tr><td colSpan={7} className="text-center p-8 text-muted text-lg">لا يوجد موظفين يطابقون شروط البحث</td></tr>
+                                    ) : paginatedRecords.map(emp => (
+                                        <tr key={emp.id} style={{
+                                            borderRight: emp.status === 'PRESENT' ? '4px solid #10b981' : emp.status === 'ABSENT' ? '4px solid #ef4444' : '4px solid transparent',
+                                            backgroundColor: emp.status === 'PRESENT' ? 'rgba(16,185,129,0.02)' : emp.status === 'ABSENT' ? 'rgba(239,68,68,0.02)' : 'transparent',
+                                            transition: 'all 0.3s ease'
+                                        }}>
+                                            <td data-label="الموظف">
+                                                <div className="mobile-card-title">{emp.name}</div>
+                                                <div className="text-muted text-xs mt-1">{emp.title} | {emp.department || 'عام'}</div>
+                                            </td>
+                                            <td className="text-center" data-label="الحالة">
+                                                <div style={{ display: 'flex', gap: '8px', width: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                                                    <button
+                                                        onClick={() => updateRecord(emp.id, 'status', 'PRESENT')}
+                                                        className="btn-modern"
+                                                        style={{
+                                                            flex: 1, padding: '10px 4px', minHeight: '44px', fontSize: '1rem',
+                                                            transition: 'all 0.3s ease',
+                                                            ...(emp.status === 'PRESENT'
+                                                                ? { background: 'rgba(16,185,129,0.2)', borderColor: 'rgba(16,185,129,0.5)', color: '#34d399', fontWeight: 'bold', transform: 'scale(1.05)' }
+                                                                : { background: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.02)', color: '#919398' }
+                                                            )
+                                                        }}>حاضر</button>
+                                                    <button
+                                                        onClick={() => updateRecord(emp.id, 'status', 'ABSENT')}
+                                                        className="btn-modern"
+                                                        style={{
+                                                            flex: 1, padding: '10px 4px', minHeight: '44px', fontSize: '1rem',
+                                                            transition: 'all 0.3s ease',
+                                                            ...(emp.status === 'ABSENT'
+                                                                ? { background: 'rgba(239,68,68,0.2)', borderColor: 'rgba(239,68,68,0.5)', color: '#f87171', fontWeight: 'bold', transform: 'scale(1.05)' }
+                                                                : { background: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.02)', color: '#919398' }
+                                                            )
+                                                        }}>غائب</button>
+                                                    <select
+                                                        className="input-glass"
+                                                        style={{ width: '54px', padding: '0', textAlign: 'center', appearance: 'none', fontSize: '1.4rem', minHeight: '44px', cursor: 'pointer', background: 'var(--card-bg)', border: '1px solid rgba(255,255,255,0.1)' }}
+                                                        value={emp.status}
+                                                        onChange={e => updateRecord(emp.id, 'status', e.target.value)}
+                                                        title="حالات أخرى (إجازة، تأخير، الخ..)">
+                                                        <option value="PRESENT">✅</option>
+                                                        <option value="ABSENT">❌</option>
+                                                        <option value="LATE">⏱️</option>
+                                                        <option value="LEAVE">🏖️</option>
+                                                        <option value="LEAVE_SICK">عِ</option>
+                                                        <option value="LEAVE_UNPAID">⛔</option>
+                                                        <option value="OTHER">📌</option>
+                                                    </select>
+                                                </div>
+                                            </td>
+                                            <td className="text-center" data-label="الحضور">
+                                                {(emp.status === 'PRESENT' || emp.status === 'LATE') ? (
+                                                    <input
+                                                        type="time"
+                                                        className="input-glass w-full text-center text-white"
+                                                        value={emp.checkIn ? new Date(new Date(emp.checkIn).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(11, 16) : ''}
+                                                        onChange={e => {
+                                                            const d = new Date(dateStr);
+                                                            const [h, m] = e.target.value.split(':');
+                                                            d.setHours(parseInt(h), parseInt(m));
+                                                            updateRecord(emp.id, 'checkIn', d.toISOString());
+                                                        }}
+                                                        style={{ minHeight: '48px', fontSize: '1.2rem', fontWeight: 'bold' }}
+                                                        aria-label={`وقت حضور ${emp.name}`}
+                                                    />
+                                                ) : <span className="text-muted">-</span>}
+                                            </td>
+                                            <td className="text-center" data-label="الانصراف">
+                                                {(emp.status === 'PRESENT' || emp.status === 'LATE') ? (
+                                                    <div className="flex gap-2 w-full">
+                                                        <input
+                                                            type="time"
+                                                            className="input-glass flex-1 text-center text-white"
+                                                            value={emp.checkOut ? new Date(new Date(emp.checkOut).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(11, 16) : ''}
+                                                            onChange={e => {
+                                                                if (!e.target.value) { updateRecord(emp.id, 'checkOut', null); return; }
+                                                                const d = new Date(dateStr);
+                                                                const [h, m] = e.target.value.split(':');
+                                                                d.setHours(parseInt(h), parseInt(m));
+                                                                updateRecord(emp.id, 'checkOut', d.toISOString());
+                                                            }}
+                                                            style={{ minHeight: '48px', fontSize: '1.2rem', fontWeight: 'bold' }}
+                                                            title="وقت الانصراف"
+                                                            aria-label={`وقت انصراف ${emp.name}`}
+                                                        />
+                                                        {!emp.checkOut && (
+                                                            <button
+                                                                onClick={() => updateRecord(emp.id, 'checkOut', new Date().toISOString())}
+                                                                className="btn-modern"
+                                                                style={{ background: 'rgba(255,255,255,0.05)', padding: '5px 10px', fontSize: '0.9rem', whiteSpace: 'nowrap' }}
+                                                            >الآن</button>
+                                                        )}
+                                                    </div>
+                                                ) : <span className="text-muted">-</span>}
+                                            </td>
+                                            <td className="text-center" data-label="ساعات">
+                                                {(emp.status === 'PRESENT' || emp.status === 'LATE') ? (
+                                                    <input
+                                                        type="number"
+                                                        step="0.1"
+                                                        className="input-glass text-center font-bold text-primary"
+                                                        value={emp.hoursWorked || ''}
+                                                        onChange={e => updateRecord(emp.id, 'hoursWorked', e.target.value)}
+                                                        style={{ width: '90px', minHeight: '48px', fontSize: '1.4rem' }}
+                                                        title="ساعات العمل"
+                                                        aria-label={`ساعات عمل ${emp.name}`}
+                                                    />
+                                                ) : <span className="text-muted">-</span>}
+                                            </td>
+                                            <td className="hide-on-tablet" data-label="ملاحظات">
+                                                <input
+                                                    type="text"
+                                                    className="input-glass w-full"
+                                                    placeholder="ملاحظات..."
+                                                    value={emp.note || ''}
+                                                    onChange={e => updateRecord(emp.id, 'note', e.target.value)}
+                                                    style={{ minHeight: '42px' }}
+                                                    title="ملاحظات"
+                                                    aria-label={`ملاحظات ${emp.name}`}
+                                                />
+                                            </td>
+                                            <td data-label="تقارير" className="text-center">
+                                                <div className="mobile-card-actions justify-center">
+                                                    <button onClick={() => { setReportModal(emp); setReportData(null); }} className="btn-modern bg-blue-500/10 text-blue-400 border border-blue-500/30 p-2 rounded-xl hover:bg-blue-500/20 w-10 h-10 flex-center" title="التقرير الشهري">📊</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* --- Pagination Controls --- */}
+                    {!loading && filteredRecords.length > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '2rem', flexWrap: 'wrap-reverse', gap: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '5px 15px', borderRadius: '20px' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>عدد النتائج:</span>
+                                <select
+                                    value={pageSize}
+                                    onChange={(e) => handlePageSizeChange(e.target.value)}
+                                    style={{ padding: '0px', fontSize: '0.9rem', width: 'auto', border: 'none', background: 'transparent', color: 'var(--primary-color)', fontWeight: 'bold', cursor: 'pointer', outline: 'none' }}
+                                    aria-label="Items per page"
+                                >
+                                    <option style={{ color: '#000' }} value={5}>5</option>
+                                    <option style={{ color: '#000' }} value={10}>10</option>
+                                    <option style={{ color: '#000' }} value={20}>20</option>
+                                    <option style={{ color: '#000' }} value={50}>50</option>
+                                    <option style={{ color: '#000' }} value={100}>100</option>
+                                    <option style={{ color: '#000' }} value="ALL">الكل</option>
+                                </select>
+                            </div>
+
+                            {totalPages > 1 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '15px', flex: '1 1 auto', maxWidth: '350px' }}>
+                                    <button disabled={validCurrentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn-modern btn-secondary" style={{ opacity: validCurrentPage === 1 ? 0.3 : 1, padding: '8px 15px', flex: 1, justifyContent: 'center' }}>&rarr; السابق</button>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '60px', background: 'rgba(227,94,53,0.1)', color: 'var(--primary-color)', borderRadius: '10px', padding: '6px 12px', fontWeight: 'bold', fontSize: '0.9rem', direction: 'ltr', whiteSpace: 'nowrap', border: '1px solid rgba(227,94,53,0.2)' }}>
+                                        {validCurrentPage} / {totalPages}
+                                    </div>
+                                    <button disabled={validCurrentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="btn-modern btn-secondary" style={{ opacity: validCurrentPage === totalPages ? 0.3 : 1, padding: '8px 15px', flex: 1, justifyContent: 'center' }}>التالي &larr;</button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
-
-            <div style={{ background: '#1a1c22', padding: '15px 25px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '20px', alignItems: 'center', border: '1px solid #2d2f36' }}>
-                <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', fontSize: '0.85rem', color: '#919398', marginBottom: '5px' }}>تاريخ اليومية</label>
-                    <input
-                        type="date"
-                        className="input-glass"
-                        value={dateStr}
-                        onChange={e => setDateStr(e.target.value)}
-                        style={{ maxWidth: '250px' }}
-                    />
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => markAll('PRESENT')} className="btn-secondary" style={{ color: '#34d399', borderColor: 'rgba(52, 211, 153, 0.3)' }}>✅ تحضير الكل حاضراً</button>
-                    <button onClick={() => markAll('ABSENT')} className="btn-secondary" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}>❌ تغيب الكل</button>
-                </div>
-            </div>
-
-            {msg && <div style={{ padding: '10px 20px', borderRadius: '8px', marginBottom: '20px', background: msg.includes('✅') ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)', color: msg.includes('✅') ? '#34d399' : '#ef4444', textAlign: 'center', border: `1px solid ${msg.includes('✅') ? '#34d399' : '#ef4444'}` }}>{msg}</div>}
-
-            {loading ? (
-                <div style={{ textAlign: 'center', padding: '3rem' }}>جاري تحميل كشوف الحضور...</div>
-            ) : (
-                <div className="table-container-glass">
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr style={{ textAlign: 'right', borderBottom: '1px solid #2d2f36' }}>
-                                <th style={{ padding: '15px' }}>الموظف</th>
-                                <th>الإدارة / القسم</th>
-                                <th>حالة الحضور</th>
-                                <th>الحضور</th>
-                                <th>الانصراف</th>
-                                <th>عدد الساعات</th>
-                                <th>ملاحظات</th>
-                                <th>تقارير</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {records.map(emp => (
-                                <tr key={emp.id} style={{ borderBottom: '1px solid #2d2f36', background: emp.status === 'ABSENT' ? 'rgba(239,68,68,0.02)' : 'transparent' }}>
-                                    <td style={{ padding: '15px' }}>
-                                        <div style={{ fontWeight: 'bold' }}>{emp.name}</div>
-                                        <div style={{ fontSize: '0.75rem', color: '#919398' }}>{emp.title} | #{emp.employeeId}</div>
-                                    </td>
-                                    <td>{emp.department || '-'}</td>
-                                    <td>
-                                        <select
-                                            className="input-glass"
-                                            value={emp.status}
-                                            onChange={e => updateRecord(emp.id, 'status', e.target.value)}
-                                            style={{
-                                                color: emp.status === 'PRESENT' ? '#34d399' : emp.status === 'ABSENT' ? '#ef4444' : emp.status === 'LATE' ? '#f59e0b' : emp.status.startsWith('LEAVE') ? '#60a5fa' : '#919398',
-                                                borderColor: emp.status === 'PRESENT' ? '#34d399' : emp.status === 'ABSENT' ? '#ef4444' : emp.status === 'LATE' ? '#f59e0b' : emp.status.startsWith('LEAVE') ? '#60a5fa' : '#2d2f36'
-                                            }}
-                                        >
-                                            <option value="PENDING" style={{ color: '#000' }}>-- لم يُسجل --</option>
-                                            <option value="PRESENT" style={{ color: '#000' }}>✅ حاضر</option>
-                                            <option value="ABSENT" style={{ color: '#000' }}>❌ غائب</option>
-                                            <option value="LATE" style={{ color: '#000' }}>⏱️ متأخر</option>
-                                            <option value="LEAVE" style={{ color: '#000' }}>🏖️ إجازة اعتيادية</option>
-                                            <option value="LEAVE_SICK" style={{ color: '#000' }}>عِ إجازة مرضية</option>
-                                            <option value="LEAVE_UNPAID" style={{ color: '#000' }}>⛔ إجازة بدون أجر</option>
-                                            <option value="OTHER" style={{ color: '#000' }}>📌 أخرى (اكتب ملاحظة)</option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        {(emp.status === 'PRESENT' || emp.status === 'LATE') ? (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                                <input
-                                                    type="time"
-                                                    className="input-glass"
-                                                    value={emp.checkIn ? new Date(new Date(emp.checkIn).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(11, 16) : ''}
-                                                    onChange={e => {
-                                                        const d = new Date(dateStr);
-                                                        const [h, m] = e.target.value.split(':');
-                                                        d.setHours(parseInt(h), parseInt(m));
-                                                        updateRecord(emp.id, 'checkIn', d.toISOString());
-                                                    }}
-                                                />
-                                            </div>
-                                        ) : '-'}
-                                    </td>
-                                    <td>
-                                        {(emp.status === 'PRESENT' || emp.status === 'LATE') ? (
-                                            <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                                                <input
-                                                    type="time"
-                                                    className="input-glass"
-                                                    value={emp.checkOut ? new Date(new Date(emp.checkOut).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(11, 16) : ''}
-                                                    onChange={e => {
-                                                        if (!e.target.value) { updateRecord(emp.id, 'checkOut', null); return; }
-                                                        const d = new Date(dateStr);
-                                                        const [h, m] = e.target.value.split(':');
-                                                        d.setHours(parseInt(h), parseInt(m));
-                                                        updateRecord(emp.id, 'checkOut', d.toISOString());
-                                                    }}
-                                                />
-                                                {!emp.checkOut && (
-                                                    <button onClick={() => updateRecord(emp.id, 'checkOut', new Date().toISOString())} style={{ background: '#333', color: '#fff', border: 'none', borderRadius: '4px', padding: '5px 8px', cursor: 'pointer', fontSize: '0.7rem' }}>الآن</button>
-                                                )}
-                                            </div>
-                                        ) : '-'}
-                                    </td>
-                                    <td>
-                                        {(emp.status === 'PRESENT' || emp.status === 'LATE') ? (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                <input
-                                                    type="number"
-                                                    step="0.1"
-                                                    title="ساعات العمل"
-                                                    placeholder="0.0"
-                                                    className="input-glass"
-                                                    value={emp.hoursWorked || ''}
-                                                    onChange={e => updateRecord(emp.id, 'hoursWorked', e.target.value)}
-                                                    style={{ width: '70px', textAlign: 'center', color: '#f59e0b', fontWeight: 'bold' }}
-                                                />
-                                                <span style={{ fontSize: '0.8rem', color: '#888' }}>س</span>
-                                            </div>
-                                        ) : '-'}
-                                    </td>
-                                    <td>
-                                        <input
-                                            type="text"
-                                            className="input-glass"
-                                            placeholder="ملاحظات أو سبب الغياب"
-                                            value={emp.note || ''}
-                                            onChange={e => updateRecord(emp.id, 'note', e.target.value)}
-                                        />
-                                    </td>
-                                    <td>
-                                        <button
-                                            onClick={() => { setReportModal(emp); setReportData(null); }}
-                                            className="btn-secondary btn-sm"
-                                            style={{ color: '#29b6f6', borderColor: 'rgba(41, 182, 246, 0.2)', background: 'rgba(41, 182, 246, 0.05)' }}
-                                            title="تقرير شهري"
-                                        >
-                                            📊 تقرير شهري
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
 
             {/* --- Monthly Report Modal --- */}
             {reportModal && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                    <div style={{ background: '#1a1c22', padding: '2rem', borderRadius: '18px', width: '100%', maxWidth: '600px', border: '1px solid #2d2f36' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                            <h3 style={{ margin: 0, color: '#f59e0b' }}>📊 تقارير الحضور الشهرية</h3>
-                            <button onClick={() => setReportModal(null)} style={{ background: 'transparent', border: 'none', color: '#ff5252', fontSize: '1.5rem', cursor: 'pointer' }}>✕</button>
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px' }}>
+                    <div className="glass-panel" style={{ width: '100%', maxWidth: '600px', padding: '2rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+                            <h3 style={{ margin: 0, color: 'var(--primary-color)' }}>📊 تقرير حضور: {reportModal.name}</h3>
+                            <button onClick={() => setReportModal(null)} className="btn-danger" style={{ width: '40px', height: '40px' }}>✕</button>
                         </div>
 
-                        <p style={{ color: '#919398', marginBottom: '1rem' }}>الموظف: <strong>{reportModal.name}</strong></p>
-
-                        <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
-                            <div style={{ flex: 1 }}>
-                                <label>من تاريخ</label>
-                                <input type="date" className="input-glass" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} style={{ width: '100%' }} />
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '15px', marginBottom: '20px' }}>
+                            <div>
+                                <label className="field-label" htmlFor="rep_start">من تاريخ</label>
+                                <input id="rep_start" type="date" className="input-glass" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} />
                             </div>
-                            <div style={{ flex: 1 }}>
-                                <label>إلى تاريخ</label>
-                                <input type="date" className="input-glass" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} style={{ width: '100%' }} />
+                            <div>
+                                <label className="field-label" htmlFor="rep_end">إلى تاريخ</label>
+                                <input id="rep_end" type="date" className="input-glass" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} />
                             </div>
-                            <button className="btn-primary"
-                                style={{ alignSelf: 'flex-end', minHeight: '42px' }}
-                                onClick={() => fetchMonthlyReport(reportModal.id)}
-                                disabled={fetchingReport}
-                            >
-                                {fetchingReport ? 'جاري التحميل...' : '🔍 عرض التقرير'}
-                            </button>
-                        </div>
-
-                        {reportData && (
-                            <div className="animate-fade-in" style={{ background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '12px', border: '1px solid #2d2f36' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1rem' }}>
-                                    <div style={{ fontSize: '0.9rem' }}>أيام الحضور: <span style={{ color: '#34d399', fontWeight: 'bold' }}>{reportData.attendance.filter((a: any) => a.status === 'PRESENT' || a.status === 'LATE').length}</span></div>
-                                    <div style={{ fontSize: '0.9rem' }}>أيام الغياب: <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{reportData.attendance.filter((a: any) => a.status === 'ABSENT').length}</span></div>
-                                </div>
-                                <button className="btn-primary" onClick={printMonthlyReport} style={{ width: '100%' }}>
-                                    🖨️ طباعة تقرير PDF احترافي
+                            <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end' }}>
+                                <button className="btn-primary" onClick={() => fetchMonthlyReport(reportModal.id)} disabled={fetchingReport} style={{ height: '45px', flex: 1 }}>
+                                    {fetchingReport ? '⏳ جاري...' : '🔍 عرض التقرير'}
                                 </button>
+                                <PrintReportBtn label="🖨️ طباعة التقرير" className="btn-modern btn-secondary" style={{ padding: '6px 15px', height: '45px', fontSize: '0.9rem' }} />
+                            </div>
+                        </div>
+
+                        {reportData ? (
+                            <div className="animate-fade-in">
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+                                    <div className="glass-panel" style={{ padding: '15px', textAlign: 'center', background: 'rgba(255,255,255,0.02)' }}>
+                                        <div style={{ fontSize: '0.8rem', color: '#34d399' }}>أيام الحضور</div>
+                                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{reportData.attendance.filter((a: any) => a.status === 'PRESENT' || a.status === 'LATE').length}</div>
+                                    </div>
+                                    <div className="glass-panel" style={{ padding: '15px', textAlign: 'center', background: 'rgba(255,255,255,0.02)' }}>
+                                        <div style={{ fontSize: '0.8rem', color: '#ef4444' }}>أيام الغياب</div>
+                                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{reportData.attendance.filter((a: any) => a.status === 'ABSENT').length}</div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        ) : (
+                            <div style={{ textAlign: 'center', padding: '2rem', border: '1px dashed #444', borderRadius: '15px', color: '#777' }}>
+                                حدد الفترة واضغط "عرض التقرير"
                             </div>
                         )}
                     </div>
                 </div>
             )}
+
+
         </div>
     );
 }

@@ -5,7 +5,12 @@ import { logSystemError } from '@/lib/logger';
 export async function GET() {
     try {
         const jobs = await prisma.manufacturingJob.findMany({
-            include: { invoice: true, materials: { include: { item: true } }, expenses: true },
+            include: {
+                invoice: true,
+                materials: { include: { item: true } },
+                expenses: true,
+                paintEntries: true,
+            },
             orderBy: { createdAt: 'desc' }
         });
         return NextResponse.json(jobs);
@@ -53,15 +58,55 @@ export async function POST(req: Request) {
             for (const exp of body.expenses) {
                 const amt = parseFloat(exp.amount) || 0;
                 totalOperatingCost += amt;
-                expensesToCreate.push({ category: 'SERVICE', description: exp.description, amount: amt, isPeriodic: false });
+                expensesToCreate.push({ category: 'SERVICE', description: exp.description, amount: amt, isPeriodic: false, supplierId: exp.supplierId || null });
+
+                if (exp.supplierId) {
+                    await tx.supplier.update({
+                        where: { id: exp.supplierId },
+                        data: { balance: { increment: amt } }
+                    });
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────────
+            // 2B. Paint entries (saved as PENDING_PAYMENT, NOT deducted from treasury here)
+            // ──────────────────────────────────────────────────────────────────
+            const paintEntriesToCreate: any[] = [];
+            let paintCostTotal = 0;
+            const paintItems: any[] = body.paintItems || [];
+            for (const p of paintItems) {
+                const unitPrice = parseFloat(p.unitPrice) || 0;
+                const qty = parseFloat(p.quantity) || 1;
+                if (unitPrice <= 0) continue; // بنود بدون سعر لا تُحفظ
+                const totalCost = unitPrice * qty;
+                paintCostTotal += totalCost;
+                paintEntriesToCreate.push({
+                    productName: p.productName || 'دهان',
+                    quantity: qty,
+                    color: p.color || null,
+                    colorCode: p.colorCode || null,
+                    unitPrice,
+                    totalCost,
+                    status: 'PENDING_PAYMENT',
+                    supplierId: p.supplierId || null
+                });
+
+                if (p.supplierId) {
+                    await tx.supplier.update({
+                        where: { id: p.supplierId },
+                        data: { balance: { increment: totalCost } }
+                    });
+                }
             }
 
             // ──────────────────────────────────────────────────────────────────
             // 3. Cost calculations
             // ──────────────────────────────────────────────────────────────────
             const operatingMarginPct = parseFloat(body.operatingMarginPct) || 0;
-            const marginAmount = (totalMaterialCost + totalOperatingCost) * (operatingMarginPct / 100);
-            const totalJobCost = totalMaterialCost + totalOperatingCost + marginAmount;
+            // تكلفة الدهان تُضاف للتكلفة الأساسية لحساب سعر الوحدة
+            const baseCost = totalMaterialCost + totalOperatingCost + paintCostTotal;
+            const marginAmount = baseCost * (operatingMarginPct / 100);
+            const totalJobCost = baseCost + marginAmount;
             const qty = parseFloat(body.outputQuantity) || 0;
             const unitCost = qty > 0 ? totalJobCost / qty : totalJobCost;
 
@@ -200,14 +245,18 @@ export async function POST(req: Request) {
                     completedAt: invoiceId ? new Date() : null,
                     totalMaterialCost,
                     totalOperatingCost,
+                    paintCostTotal,
                     operatingMarginPct,
                     netProfit: marginAmount,
                     productId: finalProductId,
                     quantityProduced: qty,
                     materials: { create: materialsToCreate },
-                    expenses: { create: expensesToCreate }
+                    expenses: { create: expensesToCreate },
+                    paintEntries: paintEntriesToCreate.length > 0
+                        ? { create: paintEntriesToCreate }
+                        : undefined,
                 },
-                include: { materials: true, expenses: true }
+                include: { materials: true, expenses: true, paintEntries: true }
             });
 
             return job;
@@ -225,11 +274,13 @@ export async function PUT(req: Request) {
         const body = await req.json();
         const { id, stage, status } = body;
         if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+        const isCompleted = stage === 'COMPLETED' || status === 'COMPLETED';
         const updated = await prisma.manufacturingJob.update({
             where: { id },
             data: {
-                status: stage === 'COMPLETED' ? 'COMPLETED' : (status || 'IN_PROGRESS'),
-                completedAt: stage === 'COMPLETED' ? new Date() : undefined
+                stage: stage || undefined,
+                status: isCompleted ? 'COMPLETED' : (status || 'IN_PROGRESS'),
+                completedAt: isCompleted ? new Date() : undefined
             }
         });
         return NextResponse.json(updated);

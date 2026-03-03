@@ -17,6 +17,7 @@ export async function GET(req: Request) {
         const employee = await prisma.employee.findUnique({
             where: { id: employeeId },
             include: {
+                phones: true,
                 payrollRecords: {
                     where: startDate && endDate ? {
                         date: {

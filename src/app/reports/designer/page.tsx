@@ -6,6 +6,10 @@ function getSettings() {
     try { return JSON.parse(localStorage.getItem('erp_settings') || '{}'); } catch { return {}; }
 }
 
+const persistDB = async (patch: Record<string, string>) => {
+    try { await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }); } catch { }
+};
+
 const SOCIAL_PLATFORMS = [
     { key: 'whatsapp', label: 'WhatsApp', color: '#25D366', defaultIcon: '📞', placeholder: 'رقم الهاتف (2010...+) أو الرابط' },
     { key: 'facebook', label: 'Facebook', color: '#1877F2', defaultIcon: 'f', placeholder: 'اسم الصفحة (مثل: stand.masr) أو الرابط' },
@@ -37,7 +41,7 @@ const formatSocialUrl = (key: string, value: string) => {
 
 const AccordionItem = ({ title, isActive, onToggle, accentColor, children }: { title: string, isActive: boolean, onToggle: () => void, accentColor: string, children: React.ReactNode }) => {
     return (
-        <div style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${isActive ? accentColor : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', marginBottom: '10px', overflow: 'hidden', transition: '0.3s' }}>
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${isActive ? accentColor : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', marginBottom: '16px', overflow: 'hidden', transition: '0.3s' }}>
             <div onClick={onToggle} style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: isActive ? `${accentColor}11` : 'transparent' }}>
                 <h3 style={{ margin: 0, fontSize: '1.05rem', color: isActive ? accentColor : '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '1.2rem', color: isActive ? accentColor : '#888' }}>{isActive ? '📂' : '📁'}</span>
@@ -59,7 +63,14 @@ export default function CombinedDesignerPage() {
     const [jobsData, setJobsData] = useState<any[]>([]);
     const [inventoryData, setInventoryData] = useState<any[]>([]);
     const [treasuryData, setTreasuryData] = useState<any[]>([]);
+    const [clientsData, setClientsData] = useState<any[]>([]);
+    const [purchasesData, setPurchasesData] = useState<any[]>([]);
+    const [employeesData, setEmployeesData] = useState<any[]>([]);
+    const [attendanceData, setAttendanceData] = useState<any[]>([]);
     const [loaded, setLoaded] = useState(false);
+
+    // WhatsApp Templates State
+    const [waTemplates, setWaTemplates] = useState<any[]>([]);
 
     // Accordion State
     const [activeSection, setActiveSection] = useState('general');
@@ -92,7 +103,14 @@ export default function CombinedDesignerPage() {
         // Footer & Social
         showFooter: true, footerText: 'شكراً لتعاملكم معنا', footerAlign: 'center', socialAlign: 'center', footerFontSize: '14',
         whatsapp: '', facebook: '', instagram: '', youtube: '', tiktok: '', pinterest: '', website: '',
-        customPlatforms: '[]'
+        customPlatforms: '[]',
+
+        // Footer Seal
+        sealImage: '', sealAlign: 'left', sealSize: '120',
+
+        // WhatsApp Global
+        waWelcomeMessage: 'مرحباً،', waWelcomeEnabled: true,
+        waFooterMessage: 'شكراً لتعاملكم معنا', waFooterEnabled: true
     });
 
     const [successMsg, setSuccessMsg] = useState('');
@@ -108,11 +126,19 @@ export default function CombinedDesignerPage() {
             fetch('/api/jobs').then(r => r.json()).catch(() => []),
             fetch('/api/inventory').then(r => r.json()).catch(() => []),
             fetch('/api/treasury').then(r => r.json()).catch(() => []),
-        ]).then(([s, j, inv, t]) => {
+            fetch('/api/clients').then(r => r.json()).catch(() => []),
+            fetch('/api/purchases').then(r => r.json()).catch(() => []),
+            fetch('/api/employees').then(r => r.json()).catch(() => []),
+            fetch('/api/employees/attendance').then(r => r.json()).catch(() => []),
+        ]).then(([s, j, inv, t, c, p, emp, att]) => {
             setSalesData(Array.isArray(s) ? s.slice(0, 5) : []);
             setJobsData(Array.isArray(j) ? j.slice(0, 5) : []);
             setInventoryData(Array.isArray(inv) ? inv.filter((i: any) => i.category !== 'MANUFACTURED_PRICING').slice(0, 5) : []);
             setTreasuryData(Array.isArray(t) ? t.slice(0, 5) : []);
+            setClientsData(Array.isArray(c) ? c.slice(0, 5) : []);
+            setPurchasesData(Array.isArray(p) ? p.slice(0, 5) : []);
+            setEmployeesData(Array.isArray(emp) ? emp.slice(0, 5) : []);
+            setAttendanceData(Array.isArray(att) ? att.slice(0, 5) : []);
             setLoaded(true);
         });
 
@@ -125,15 +151,67 @@ export default function CombinedDesignerPage() {
             } else {
                 setConfig((prev: any) => ({ ...prev, companyName: s.appName || '', accentColor: s.primaryColor || '#E35E35' }));
             }
+
+            // Sync with DB
+            fetch('/api/settings').then(r => r.json()).then(dbSettings => {
+                if (dbSettings.report_config) {
+                    const dbConfig = JSON.parse(dbSettings.report_config);
+                    setConfig((prev: any) => ({ ...prev, ...dbConfig }));
+                }
+            }).catch(() => { });
+
+            // Load WhatsApp Templates
+            fetch('/api/whatsapp-templates').then(r => r.json()).then(data => {
+                if (Array.isArray(data)) setWaTemplates(data);
+            }).catch(() => { });
         } catch { }
     }, []);
 
     const setT = (k: string, v: any) => setConfig((prev: any) => ({ ...prev, [k]: v }));
 
-    const saveConfig = () => {
+    const saveConfig = async () => {
         localStorage.setItem('erp_unified_report_config', JSON.stringify(config));
-        setSuccessMsg('✅ تم حفظ كافة إعدادات التقارير والفواتير بنجاح!');
+
+        // Persist to DB for global access
+        await persistDB({
+            report_config: JSON.stringify(config),
+            footerSealImage: config.sealImage || '',
+            footerSealAlign: config.sealAlign || 'left',
+            footerSealSize: config.sealSize || '120'
+        });
+
+        // Persist WhatsApp Templates
+        for (const tmpl of waTemplates) {
+            await fetch('/api/whatsapp-templates', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: tmpl.type, message: tmpl.message, active: tmpl.active })
+            });
+        }
+
+        setSuccessMsg('✅ تم حفظ كافة إعدادات التقارير والقوالب بنجاح!');
         setTimeout(() => setSuccessMsg(''), 4000);
+    };
+
+    const updateWaTemplate = (type: string, message: string) => {
+        setWaTemplates(prev => {
+            const exists = prev.find(p => p.type === type);
+            if (exists) return prev.map(p => p.type === type ? { ...p, message } : p);
+            return [...prev, { type, message, active: true }];
+        });
+    };
+
+    const toggleWaTemplate = (type: string, active: boolean) => {
+        setWaTemplates(prev => prev.map(p => p.type === type ? { ...p, active } : p));
+    };
+
+    const insertWaTag = (type: string, tag: string) => {
+        setWaTemplates(prev => {
+            const exists = prev.find(p => p.type === type);
+            const msg = exists ? exists.message : '';
+            if (exists) return prev.map(p => p.type === type ? { ...p, message: msg + ` ${tag} ` } : p);
+            return [...prev, { type, message: ` ${tag} `, active: true }];
+        });
     };
 
     const loadIconFile = (key: string, file: File) => {
@@ -145,33 +223,64 @@ export default function CombinedDesignerPage() {
     // ─── Data Handlers ──────────────────────────────
     const getPreviewData = () => {
         if (config.reportType === 'sales') return salesData;
+        if (config.reportType === 'clients_statement') return salesData; // client invoices reuse sales data
         if (config.reportType === 'jobs') return jobsData;
         if (config.reportType === 'inventory') return inventoryData;
         if (config.reportType === 'treasury') return treasuryData;
+        if (config.reportType === 'purchases') return purchasesData;
+        if (config.reportType === 'employees') return employeesData;
+        if (config.reportType === 'attendance') return attendanceData;
+        if (config.reportType === 'unified') return salesData;
         return [];
     };
 
     const getColumns = () => {
         if (config.reportType === 'sales') return [
-            { key: 'invoiceNo', label: 'الرقم', enabled: config.columns.invoiceNo !== false },
+            { key: 'invoiceNo', label: 'رقم الفاتورة', enabled: config.columns.invoiceNo !== false },
             { key: 'client', label: 'العميل', enabled: config.columns.client !== false },
             { key: 'date', label: 'التاريخ', enabled: config.columns.date !== false },
             { key: 'total', label: 'الإجمالي', enabled: config.columns.total !== false },
             { key: 'status', label: 'الحالة', enabled: config.columns.status !== false },
         ].filter(c => c.enabled);
+        if (config.reportType === 'clients_statement') return [
+            { key: 'invoiceNo', label: 'رقم الفاتورة', enabled: true },
+            { key: 'date', label: 'التاريخ', enabled: true },
+            { key: 'total', label: 'المبلغ', enabled: true },
+            { key: 'status', label: 'الحالة', enabled: true },
+        ];
+        if (config.reportType === 'purchases') return [
+            { key: 'invoiceNo', label: 'رقم الفاتورة', enabled: true },
+            { key: 'supplier', label: 'المورد', enabled: true },
+            { key: 'date', label: 'التاريخ', enabled: true },
+            { key: 'total', label: 'الإجمالي', enabled: true },
+        ];
         if (config.reportType === 'jobs') return ['اسم الشغلانة', 'العميل', 'الحالة', 'تكلفة الخامات', 'صافي الربح'].map(l => ({ key: l, label: l, enabled: true }));
         if (config.reportType === 'inventory') return ['الصنف', 'النوع', 'الكمية', 'سعر الوحدة', 'القيمة'].map(l => ({ key: l, label: l, enabled: true }));
         if (config.reportType === 'treasury') return ['البيان', 'النوع', 'المبلغ', 'التاريخ'].map(l => ({ key: l, label: l, enabled: true }));
+        if (config.reportType === 'employees') return ['اسم الموظف', 'الوظيفة', 'الراتب الأساسي', 'الحالة'].map(l => ({ key: l, label: l, enabled: true }));
+        if (config.reportType === 'attendance') return ['الموظف', 'التاريخ', 'حضور', 'انصراف', 'الحالة'].map(l => ({ key: l, label: l, enabled: true }));
+        if (config.reportType === 'unified') return [
+            { key: 'section', label: 'القسم', enabled: true },
+            { key: 'invoiceNo', label: 'المرجع', enabled: true },
+            { key: 'date', label: 'التاريخ', enabled: true },
+            { key: 'total', label: 'الإجمالي', enabled: true },
+        ];
         return [];
     };
 
     const getCellValue = (item: any, colKey: string) => {
-        if (config.reportType === 'sales') {
+        if (config.reportType === 'sales' || config.reportType === 'clients_statement') {
             if (colKey === 'invoiceNo') return item.invoiceNo || '-';
             if (colKey === 'client') return item.client?.name || '-';
             if (colKey === 'date') return new Date(item.createdAt).toLocaleDateString('ar-EG');
             if (colKey === 'total') return `${item.total?.toFixed(0)} ${sym}`;
             if (colKey === 'status') return item.status === 'PAID' ? 'مدفوعة' : item.status === 'PARTIAL' ? 'جزئي' : 'غير مدفوعة';
+        }
+        if (config.reportType === 'purchases') {
+            if (colKey === 'invoiceNo') return item.invoiceNo || '-';
+            if (colKey === 'supplier') return item.supplier || '-';
+            if (colKey === 'date') return new Date(item.date || item.createdAt).toLocaleDateString('ar-EG');
+            if (colKey === 'total') return `${item.totalAmount?.toFixed(0)} ${sym}`;
         }
         if (config.reportType === 'jobs') {
             if (colKey === 'اسم الشغلانة') return item.name;
@@ -193,102 +302,37 @@ export default function CombinedDesignerPage() {
             if (colKey === 'المبلغ') return `${item.amount?.toFixed(0)} ${sym}`;
             if (colKey === 'التاريخ') return new Date(item.createdAt).toLocaleDateString('ar-EG');
         }
+        if (config.reportType === 'employees') {
+            if (colKey === 'اسم الموظف') return item.name;
+            if (colKey === 'الوظيفة') return item.position || '-';
+            if (colKey === 'الراتب الأساسي') return `${item.baseSalary || 0} ${sym}`;
+            if (colKey === 'الحالة') return item.isActive ? 'مفعل' : 'موقوف';
+        }
+        if (config.reportType === 'attendance') {
+            if (colKey === 'الموظف') return item.employee?.name || '-';
+            if (colKey === 'التاريخ') return new Date(item.date).toLocaleDateString('ar-EG');
+            if (colKey === 'حضور') return item.checkIn || '-';
+            if (colKey === 'انصراف') return item.checkOut || '-';
+            if (colKey === 'الحالة') return item.status === 'PRESENT' ? 'حضور' : 'غياب';
+        }
+        if (config.reportType === 'unified') {
+            if (colKey === 'section') return item._section || '-';
+            if (colKey === 'invoiceNo') return item.invoiceNo || item.name || '-';
+            if (colKey === 'date') return new Date(item.createdAt || item.date).toLocaleDateString('ar-EG');
+            if (colKey === 'total') return `${(item.total || item.totalAmount || item.amount || 0).toFixed(0)} ${sym}`;
+        }
         return '-';
     };
 
-    // ─── Print HTML Generator ────────────────────────
-    const printReport = () => {
-        const win = window.open('', '_blank');
-        if (!win) return;
-        const data = getPreviewData();
-        const cols = getColumns();
-        const colsHtml = cols.map(c => `<th style="background:${config.accentColor};color:#fff;padding:8px;text-align:right">${c.label}</th>`).join('');
-        const rowsHtml = data.map((item, i) =>
-            `<tr style="background:${i % 2 === 0 ? '#f9f9f9' : '#fff'}">
-                <td style="text-align:center;padding:8px;border-bottom:1px solid #eee;color:#888">${i + 1}</td>
-                ${cols.map(c => `<td style="padding:8px;border-bottom:1px solid #eee">${getCellValue(item, c.key)}</td>`).join('')}
-            </tr>`
-        ).join('');
-
-        let customPlatforms: any[] = [];
-        try { customPlatforms = JSON.parse(config.customPlatforms || '[]'); } catch { }
-        const allPlatforms = [...SOCIAL_PLATFORMS, ...customPlatforms];
-        const activePlatforms = allPlatforms.filter((p: any) => !!config[p.key] && config[`${p.key}_show`] !== false);
-
-        const socialHtml = activePlatforms.map((p: any) => {
-            const customIcon = config[`${p.key}_icon`];
-            const iconContent = customIcon ? `<img src="${customIcon}" style="width:100%;height:100%;object-fit:contain" />` : `<span style="color:#fff;font-weight:bold">${p.defaultIcon}</span>`;
-            const finalUrl = formatSocialUrl(p.key, config[p.key]);
-            return `<a href="${finalUrl}" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:${customIcon ? 'transparent' : p.color};border-radius:4px;margin:0 4px;text-decoration:none">${iconContent}</a>`;
-        }).join('');
-
-        // Client Info (If enabled and applicable)
-        let clientHtml = '';
-        if (config.showClientBox && config.reportType === 'sales') {
-            clientHtml = `
-            <div style="border:1px solid #ddd;border-radius:8px;padding:12px;margin:16px 0;background:#fafafa">
-                <h3 style="margin:0 0 10px;font-size:1rem;color:${config.accentColor}">بيانات العميل</h3>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.9rem">
-                    ${config.showClientName ? `<div><strong>اسم العميل:</strong> عميل افتراضي للطباعة</div>` : ''}
-                    ${config.showClientStoreName ? `<div><strong>اسم الشركة/المحل:</strong> مؤسسة الأمل</div>` : ''}
-                    ${config.showClientPhone ? `<div><strong>الهاتف:</strong> 01000000000</div>` : ''}
-                    ${config.showClientAddress ? `<div><strong>العنوان:</strong> القاهرة، مصر</div>` : ''}
-                </div>
-            </div>`;
-        }
-
-        win.document.write(`<html dir="rtl"><head><title>${config.title}</title><style>
-            @page{size:A4 ${config.orientation};margin:12mm}*{box-sizing:border-box}
-            body{font-family:Tahoma,Arial,sans-serif;color:#222;font-size:${config.fontSize}px;margin:0}
-            .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-        </style></head><body onload="window.print()">
-            
-            <!-- HEADER -->
-            <div style="border-bottom:3px solid ${config.accentColor};padding-bottom:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
-                <div style="flex:1;text-align:right">
-                    <h2 style="margin:0;color:${config.accentColor};font-size:${config.companyNameFontSize || 24}px">${config.companyName || 'اسم الشركة'}</h2>
-                    ${config.companySubtitle ? `<p style="margin:4px 0 0;color:#666;font-size:${config.companySubtitleFontSize || 14}px">${config.companySubtitle}</p>` : ''}
-                    <div style="margin-top:8px;font-size:0.85rem;color:#555">
-                        ${config.companyAddress ? `<div>📍 ${config.companyAddress}</div>` : ''}
-                        ${config.companyPhone ? `<div>📞 ${config.companyPhone} ${config.companyPhone2 ? ` | ${config.companyPhone2}` : ''}</div>` : ''}
-                        ${config.companyTax ? `<div>📄 ضريبي: ${config.companyTax} ${config.companyCommercial ? ` | س.ت: ${config.companyCommercial}` : ''}</div>` : ''}
-                    </div>
-                </div>
-                <div style="flex:1;text-align:center">
-                    <h1 style="margin:0;font-size:${config.titleFontSize || 28}px">${config.title}</h1>
-                    ${config.subtitle ? `<h3 style="margin:4px 0 0;color:#666">${config.subtitle}</h3>` : ''}
-                    ${config.showDate ? `<p style="margin:8px 0 0;color:#888;font-size:0.85rem">التاريخ: ${new Date().toLocaleDateString('ar-EG')}</p>` : ''}
-                </div>
-                <div style="flex:1;text-align:left">
-                    ${config.showLogo && (config.printLogoCustom || appLogo) ? `<img src="${config.printLogoCustom || appLogo}" style="max-width:${config.printLogoSize || 70}px;max-height:${config.printLogoSize || 70}px;object-fit:contain" />` : ''}
-                </div>
-            </div>
-
-            ${clientHtml}
-
-            <!-- DATA TABLE -->
-            ${config.showTable ? `
-                <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:0.9rem">
-                    <thead><tr><th style="background:${config.accentColor};color:#fff;padding:8px;text-align:center">#</th>${colsHtml}</tr></thead>
-                    <tbody>${rowsHtml}</tbody>
-                </table>
-            ` : ''}
-
-            <!-- FOOTER -->
-            ${config.showFooter ? `
-                <div style="margin-top:30px;padding-top:16px;border-top:1px solid #ddd;text-align:${config.footerAlign};font-size:0.9rem;color:#555">
-                    <div style="margin-bottom:12px;font-size:${config.footerFontSize || 14}px">${config.footerText}</div>
-                    <div style="text-align:${config.socialAlign}">${socialHtml}</div>
-                </div>
-            ` : ''}
-        </body></html>`);
-        win.document.close();
-    };
+    // ─────────────────────────────────────────────────────────────────
+    // The print logic (printReport) is now handled via PrintReportBtn 
+    // in the main reports page. The designer only modifies the template.
+    // ─────────────────────────────────────────────────────────────────
 
 
 
     return (
-        <div className="animate-fade-in" style={{ margin: '-1rem', width: 'calc(100% + 2rem)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div className="animate-fade-in" style={{ margin: '-1rem', width: 'calc(100% + 2rem)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, paddingBottom: '100px' }}>
             <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div>
                     <h1 style={{ margin: '0 0 5px 0', fontSize: '1.6rem' }}>🎨 مصمم التقارير والقوالب الشامل</h1>
@@ -296,7 +340,6 @@ export default function CombinedDesignerPage() {
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
                     <button onClick={saveConfig} className="btn-primary" style={{ padding: '10px 20px', fontSize: '0.9rem', background: '#66bb6a' }}>💾 حفظ الإعدادات</button>
-                    <button onClick={printReport} className="btn-primary" style={{ padding: '10px 20px', fontSize: '0.9rem', background: '#29b6f6' }}>🖨 طباعة / تصدير PDF</button>
                 </div>
             </header>
 
@@ -305,7 +348,7 @@ export default function CombinedDesignerPage() {
             <div style={{ display: 'flex', gap: '2rem', flex: 1, minHeight: 0, width: '100%' }}>
 
                 {/* ─── LEFT PANEL: SETTINGS ACCORDION ───────────────────────── */}
-                <div style={{ display: 'flex', flexDirection: 'column', flex: '4', overflowY: 'auto', paddingRight: '5px' }}>
+                <div className="designer-sidebar" style={{ display: 'flex', flexDirection: 'column', flex: '4', paddingRight: '5px', minWidth: '300px' }}>
 
                     <AccordionItem title="إعدادات التقرير الأساسية" isActive={activeSection === 'general'} onToggle={() => setActiveSection(activeSection === 'general' ? '' : 'general')} accentColor={config.accentColor}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -314,15 +357,35 @@ export default function CombinedDesignerPage() {
                                 <select className="input-glass" value={config.reportType} onChange={e => {
                                     const type = e.target.value;
                                     setT('reportType', type);
-                                    if (type === 'sales') setT('title', 'فاتورة مبيعات');
-                                    else if (type === 'jobs') setT('title', 'تقرير أمر تشغيل');
+                                    if (type === 'sales') setT('title', 'تقرير فواتير المبيعات');
+                                    else if (type === 'clients_statement') setT('title', 'كشف حساب عميل');
+                                    else if (type === 'purchases') setT('title', 'تقرير المشتريات');
+                                    else if (type === 'jobs') setT('title', 'تقرير أوامر التشغيل');
                                     else if (type === 'inventory') setT('title', 'جرد المخزون');
-                                    else if (type === 'treasury') setT('title', 'كشف حساب خزينة');
+                                    else if (type === 'treasury') setT('title', 'كشف حساب الخزينة');
+                                    else if (type === 'employees') setT('title', 'كشف بيانات العاملين');
+                                    else if (type === 'attendance') setT('title', 'تقرير الحضور والانصراف');
+                                    else if (type === 'unified') setT('title', 'التقرير الموحد الشامل');
                                 }}>
-                                    <option value="sales">🧾 فواتير المبيعات / كشوف حساب العملاء</option>
-                                    <option value="jobs">🏭 أوامر التصنيع والتشغيل</option>
-                                    <option value="inventory">📦 المخازن والمواد</option>
-                                    <option value="treasury">🏦 الخزينة والمصروفات</option>
+                                    <optgroup label="───── المبيعات والعملاء ─────">
+                                        <option value="sales">🧾 فواتير المبيعات</option>
+                                        <option value="clients_statement">📊 كشف حساب العملاء</option>
+                                    </optgroup>
+                                    <optgroup label="───── المشتريات والتصنيع ─────">
+                                        <option value="purchases">📦 تقرير المشتريات</option>
+                                        <option value="jobs">🏭 أوامر التصنيع والتشغيل</option>
+                                    </optgroup>
+                                    <optgroup label="───── المخزن والخزينة ─────">
+                                        <option value="inventory">📦 المخزن والمواد</option>
+                                        <option value="treasury">🏦 الخزينة والمصروفات</option>
+                                    </optgroup>
+                                    <optgroup label="───── شؤون العاملين ─────">
+                                        <option value="employees">👥 بيانات ومرتبات العاملين</option>
+                                        <option value="attendance">📅 الحضور والانصراف</option>
+                                    </optgroup>
+                                    <optgroup label="───── تقارير متقدمة ─────">
+                                        <option value="unified">🌐 التقرير الموحد الشامل</option>
+                                    </optgroup>
                                 </select>
                             </div>
                             <div>
@@ -517,10 +580,122 @@ export default function CombinedDesignerPage() {
                             )}
                         </div>
                     </AccordionItem>
+
+                    <AccordionItem title="📄 ختم أسفل التقارير (Footer Seal)" isActive={activeSection === 'seal'} onToggle={() => setActiveSection(activeSection === 'seal' ? '' : 'seal')} accentColor={config.accentColor}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div style={{ padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', textAlign: 'center' }}>
+                                <label style={{ display: 'inline-block', padding: '10px 20px', background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '8px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    رفع صورة الختم / الإمضاء
+                                    <input type="file" accept="image/png, image/jpeg" style={{ display: 'none' }} onChange={e => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const reader = new FileReader();
+                                        reader.onload = ev => setT('sealImage', ev.target?.result as string);
+                                        reader.readAsDataURL(file);
+                                    }} />
+                                </label>
+                                {config.sealImage && (
+                                    <div style={{ marginTop: '14px' }}>
+                                        <div style={{ background: 'url("data:image/svg+xml,%3Csvg width=\\"20\\" height=\\"20\\" xmlns=\\"http://www.w3.org/2000/svg\\"%3E%3Cpath d=\\"M0 0h10v10H0zm10 10h10v10H10z\\" fill=\\"%23333\\"/%3E%3Cpath d=\\"M10 0h10v10H10zM0 10h10v10H0z\\" fill=\\"%23444\\"/%3E%3C/svg%3E")', padding: '10px', borderRadius: '8px', display: 'inline-block' }}>
+                                            <img src={config.sealImage} style={{ maxHeight: '100px', objectFit: 'contain' }} alt="Seal Preview" />
+                                        </div>
+                                        <div style={{ marginTop: '8px' }}>
+                                            <button type="button" onClick={() => setT('sealImage', '')} style={{ background: 'transparent', color: '#ff5252', border: 'none', cursor: 'pointer', fontSize: '0.85rem' }}>حذف الختم</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {config.sealImage && (
+                                <>
+                                    <div>
+                                        <label style={{ color: '#ccc', fontSize: '0.85rem', marginBottom: '4px', display: 'block' }}>محاذاة الختم</label>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            {['right', 'center', 'left'].map(pos => (
+                                                <button key={pos} onClick={() => setT('sealAlign', pos)} style={{ flex: 1, padding: '8px', background: config.sealAlign === pos ? config.accentColor : 'transparent', border: `1px solid ${config.accentColor}`, color: config.sealAlign === pos ? '#fff' : config.accentColor, borderRadius: '6px', cursor: 'pointer', transition: '0.2s' }}>
+                                                    {pos === 'right' ? 'يمين' : pos === 'center' ? 'وسط' : 'يسار'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={{ color: '#ccc', fontSize: '0.85rem', marginBottom: '4px', display: 'block' }}>حجم الختم بالبيكسل (px)</label>
+                                        <input type="range" min="50" max="300" value={config.sealSize} onChange={e => setT('sealSize', e.target.value)} style={{ width: '100%', accentColor: config.accentColor }} />
+                                        <div style={{ textAlign: 'center', fontSize: '0.8rem', color: '#aaa', marginTop: '4px' }}>{config.sealSize}px</div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </AccordionItem>
+
+                    <AccordionItem title="⚙️ إعدادات قوالب الواتساب" isActive={activeSection === 'whatsapp'} onToggle={() => setActiveSection(activeSection === 'whatsapp' ? '' : 'whatsapp')} accentColor="#25D366">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '8px' }}>
+                                    <input type="checkbox" checked={config.waWelcomeEnabled} onChange={e => setT('waWelcomeEnabled', e.target.checked)} style={{ accentColor: '#25D366' }} />
+                                    <span style={{ fontWeight: 'bold' }}>تفعيل الرسالة الترحيبية الموحدة</span>
+                                </label>
+                                <input type="text" className="input-glass" style={{ width: '100%', opacity: config.waWelcomeEnabled ? 1 : 0.5 }} value={config.waWelcomeMessage} onChange={e => setT('waWelcomeMessage', e.target.value)} disabled={!config.waWelcomeEnabled} />
+                            </div>
+
+                            {/* SALES TEMPLATE */}
+                            <div style={{ borderLeft: '3px solid #25D366', paddingLeft: '10px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                    <label style={{ fontSize: '0.9rem', color: '#fff' }}>🧾 رسالة إرسال الفاتورة (Sales)</label>
+                                    <label style={{ fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={waTemplates.find(t => t.type === 'sales')?.active !== false} onChange={e => toggleWaTemplate('sales', e.target.checked)} /> مفعل</label>
+                                </div>
+                                <textarea className="input-glass" style={{ width: '100%', minHeight: '80px', fontSize: '0.85rem' }} value={waTemplates.find(t => t.type === 'sales')?.message || ''} onChange={e => updateWaTemplate('sales', e.target.value)} placeholder="اكتب قالب الفاتورة هنا..." />
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                                    <span style={{ fontSize: '0.75rem', color: '#aaa', alignSelf: 'center' }}>إدراج:</span>
+                                    {['[اسم_الطرف]', '[رقم_الفاتورة]', '[الإجمالي]', '[تاريخ_اليوم]'].map(tag => (
+                                        <button key={tag} onClick={() => insertWaTag('sales', tag)} className="wa-tag-btn">{tag}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* CLIENTS TEMPLATE */}
+                            <div style={{ borderLeft: '3px solid #29b6f6', paddingLeft: '10px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                    <label style={{ fontSize: '0.9rem', color: '#fff' }}>👥 رسالة كشف حساب العميل (Clients)</label>
+                                    <label style={{ fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={waTemplates.find(t => t.type === 'clients')?.active !== false} onChange={e => toggleWaTemplate('clients', e.target.checked)} /> مفعل</label>
+                                </div>
+                                <textarea className="input-glass" style={{ width: '100%', minHeight: '80px', fontSize: '0.85rem' }} value={waTemplates.find(t => t.type === 'clients')?.message || ''} onChange={e => updateWaTemplate('clients', e.target.value)} placeholder="اكتب قالب كشف الحساب هنا..." />
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                                    <span style={{ fontSize: '0.75rem', color: '#aaa', alignSelf: 'center' }}>إدراج:</span>
+                                    {['[اسم_الطرف]', '[الرصيد]', '[تاريخ_اليوم]'].map(tag => (
+                                        <button key={tag} onClick={() => insertWaTag('clients', tag)} className="wa-tag-btn">{tag}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* TREASURY TEMPLATE */}
+                            <div style={{ borderLeft: '3px solid #ffa726', paddingLeft: '10px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                    <label style={{ fontSize: '0.9rem', color: '#fff' }}>🏦 رسالة استلام/دفع نقدية (Treasury)</label>
+                                    <label style={{ fontSize: '0.8rem', cursor: 'pointer' }}><input type="checkbox" checked={waTemplates.find(t => t.type === 'treasury')?.active !== false} onChange={e => toggleWaTemplate('treasury', e.target.checked)} /> مفعل</label>
+                                </div>
+                                <textarea className="input-glass" style={{ width: '100%', minHeight: '80px', fontSize: '0.85rem' }} value={waTemplates.find(t => t.type === 'treasury')?.message || ''} onChange={e => updateWaTemplate('treasury', e.target.value)} placeholder="اكتب قالب الحركة النقدية هنا..." />
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                                    <span style={{ fontSize: '0.75rem', color: '#aaa', alignSelf: 'center' }}>إدراج:</span>
+                                    {['[اسم_الطرف]', '[البيان]', '[المبلغ]', '[تاريخ_اليوم]'].map(tag => (
+                                        <button key={tag} onClick={() => insertWaTag('treasury', tag)} className="wa-tag-btn">{tag}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '8px' }}>
+                                    <input type="checkbox" checked={config.waFooterEnabled} onChange={e => setT('waFooterEnabled', e.target.checked)} style={{ accentColor: '#25D366' }} />
+                                    <span style={{ fontWeight: 'bold' }}>تفعيل تذييل النظام الثابت</span>
+                                </label>
+                                <textarea className="input-glass" style={{ width: '100%', opacity: config.waFooterEnabled ? 1 : 0.5, minHeight: '50px' }} value={config.waFooterMessage} onChange={e => setT('waFooterMessage', e.target.value)} disabled={!config.waFooterEnabled} />
+                            </div>
+                        </div>
+                    </AccordionItem>
                 </div>
 
                 {/* ─── RIGHT PANEL: LIVE SECTION PREVIEW ───────────────────────── */}
-                <div style={{ display: 'flex', flexDirection: 'column', flex: '6', overflowY: 'auto', paddingLeft: '5px' }}>
+                <div className="designer-preview-panel" style={{ display: 'flex', flexDirection: 'column', flex: '6', paddingLeft: '5px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <h3 style={{ margin: 0, color: '#fff', fontSize: '1rem' }}>معاينة حية للمستند المطبوع</h3>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -586,19 +761,63 @@ export default function CombinedDesignerPage() {
                         {/* FOOTER PREVIEW */}
                         {config.showFooter && (
                             <div style={{ marginTop: '20px', paddingTop: '10px', borderTop: '1px solid #eee', textAlign: config.footerAlign, color: '#888', fontSize: '0.78rem' }}>
-                                <div style={{ marginBottom: '8px', fontSize: config.footerFontSize ? `${config.footerFontSize}px` : 'inherit' }}>{config.footerText}</div>
-                                <div style={{ textAlign: config.socialAlign }}>
+                                <div style={{ marginBottom: '8px', fontSize: config.footerFontSize ? `${config.footerFontSize}px` : 'inherit', textAlign: config.footerAlign }}>{config.footerText}</div>
+                                <div style={{ textAlign: config.socialAlign, marginBottom: '8px' }}>
                                     {SOCIAL_PLATFORMS.filter(p => config[`${p.key}_show`] !== false && config[p.key]).map(p => (
                                         <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', background: config[`${p.key}_icon`] ? 'transparent' : p.color, borderRadius: '4px', margin: '0 3px' }}>
                                             {config[`${p.key}_icon`] ? <img src={config[`${p.key}_icon`]} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <span style={{ color: '#fff', fontSize: '0.7rem', fontWeight: 'bold' }}>{p.defaultIcon}</span>}
                                         </span>
                                     ))}
                                 </div>
+                                {config.sealImage && (
+                                    <div style={{ textAlign: config.sealAlign as any, marginTop: '10px' }}>
+                                        <img src={config.sealImage} style={{ maxHeight: `${config.sealSize}px`, objectFit: 'contain' }} alt="Seal" />
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
                 </div>
             </div>
+
+            <style>{`
+                @media (max-width: 900px) {
+                    .designer-sidebar { min-width: 100% !important; max-height: none !important; margin-bottom: 30px; }
+                    .designer-preview-panel { min-width: 100% !important; }
+                    .animate-fade-in > div { flex-direction: column !important; gap: 10px !important; }
+                    
+                    /* Force stack grids */
+                    div[style*="grid-template-columns"] { 
+                        grid-template-columns: 1fr !important;
+                        gap: 15px !important;
+                    }
+                    
+                    /* Increase touch targets for buttons and inputs */
+                    .btn-primary, .input-glass, select.input-glass {
+                        min-height: 48px;
+                    }
+                    
+                    /* Improve preview visibility */
+                    .designer-preview-panel > div:last-child {
+                        width: 100% !important;
+                        min-height: 400px !important;
+                    }
+                }
+                .wa-tag-btn {
+                    padding: 4px 8px;
+                    background: rgba(255,255,255,0.05);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 4px;
+                    color: #fff;
+                    font-size: 0.75rem;
+                    cursor: pointer;
+                    transition: 0.2s;
+                }
+                .wa-tag-btn:hover {
+                    background: rgba(255,255,255,0.15);
+                    border-color: #25D366;
+                }
+            `}</style>
         </div>
     );
 }

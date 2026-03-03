@@ -5,6 +5,11 @@ node_modules/
 
 # testing
 /coverage
+test/
+test-*.js
+test-*.ts
+*.test.js
+*.test.ts
 
 # next.js
 .next/
@@ -25,6 +30,9 @@ yarn-error.log*
 # local env files
 .env*.local
 
+# Secrets - DO NOT COMMIT
+.env
+
 # vercel
 .vercel
 
@@ -32,7 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Prisma
+# Prisma - local DB only
 /prisma/dev.db
 /prisma/dev.db-journal
 
@@ -46,3 +54,18 @@ src/generated/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Local SQL backups - sensitive
+*.sql
+
+# Temp scripts - local only
+update_cats.js
+restore_paint.js
+seed.js
+deploy_package.json
+test-btn.js
+test-parse.js
+test.pdf
+
+# Large files
+tsconfig.tsbuildinfo

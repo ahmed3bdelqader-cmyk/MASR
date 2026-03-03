@@ -1,13 +1,19 @@
 'use client';
 import React, { useEffect, useState, useMemo } from 'react';
+import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
+import ExpensesView from '@/components/ExpensesView';
+import { banksData, FinancialInstitution } from '@/lib/banksData';
 
-type Treasury = { id: string, type: string, name: string | null, color: string | null, balance: number, transactions: any[] };
+
+type Treasury = { id: string, type: string, name: string | null, color: string | null, bankId: string | null, logoPath: string | null, balance: number, transactions: any[] };
 
 export default function TreasuryPage() {
+    const sym = useMemo(() => { try { return JSON.parse(localStorage.getItem('erp_settings') || '{}').currencySymbol || 'ج.م'; } catch { return 'ج.م'; } }, []);
     const [treasuries, setTreasuries] = useState<Treasury[]>([]);
     const [loading, setLoading] = useState(true);
     const [form, setForm] = useState({ type: 'MAIN', transactionType: 'IN', amount: '', channel: 'CASH', description: '', refNumber: '' });
     const [success, setSuccess] = useState('');
+    const [activeTab, setActiveTab] = useState<'TREASURY' | 'EXPENSES'>('TREASURY');
 
     // ── Filter state ───────────────────────────────────────────────────────────
     const [fType, setFType] = useState('ALL');          // ALL | IN | OUT
@@ -17,27 +23,83 @@ export default function TreasuryPage() {
     const [fDateTo, setFDateTo] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
     const [showManageChannels, setShowManageChannels] = useState(false);
-    const [channelForm, setChannelForm] = useState({ type: '', name: '', color: '#29b6f6' });
+    const [channelForm, setChannelForm] = useState({ type: '', name: '', color: '#29b6f6', bankId: '', logoPath: '' });
+    const [bankSearch, setBankSearch] = useState('');
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isSavingChannel, setIsSavingChannel] = useState(false);
+    const [showBalances, setShowBalances] = useState(false);
 
     // Pagination
+    // Pagination
     const [currentPage, setCurrentPage] = useState(1);
-    const pageSize = 15;
+    const [pageSize, setPageSize] = useState<'ALL' | number>(5); // Default 5
 
     useEffect(() => {
         fetchTreasuries();
+        // Load saved page size
+        const saved = localStorage.getItem('erp_treasury_pageSize');
+        if (saved) setPageSize(saved === 'ALL' ? 'ALL' : parseInt(saved, 10));
+
         try {
             const u = JSON.parse(localStorage.getItem('erp_user') || '{}');
-            setIsAdmin(u.role === 'ADMIN' || !u.role);
+            setIsAdmin((u?.role || '').toUpperCase() === 'ADMIN' || !u?.role);
         } catch { }
+
+        const handleReload = () => fetchTreasuries();
+        window.addEventListener('reloadTreasury', handleReload);
+        return () => window.removeEventListener('reloadTreasury', handleReload);
     }, []);
 
     const fetchTreasuries = async () => {
         try {
             const res = await fetch('/api/treasury');
-            const data = await res.json();
-            setTreasuries(Array.isArray(data) ? data : []);
+            let data = await res.json();
+            if (Array.isArray(data)) {
+                let needsRefresh = false;
+                for (let tr of data) {
+                    if (!tr.bankId && tr.type !== 'MAIN') {
+                        const nameLower = (tr.name || tr.type).toLowerCase();
+                        let matchedBank = null;
+                        if (nameLower.includes('cib')) matchedBank = banksData.find(b => b.id === 'CIB');
+                        else if (nameLower.includes('أهلي') || nameLower.includes('nbe')) matchedBank = banksData.find(b => b.id === 'NBE');
+                        else if (nameLower.includes('مصر') || nameLower.includes('misr')) matchedBank = banksData.find(b => b.id === 'BANQUE_MISR');
+                        else if (nameLower.includes('qnb')) matchedBank = banksData.find(b => b.id === 'QNB');
+                        else if (nameLower.includes('اسكندرية') || nameLower.includes('alex')) matchedBank = banksData.find(b => b.id === 'ALEX_BANK');
+                        else if (nameLower.includes('قاهرة') || nameLower.includes('caire')) matchedBank = banksData.find(b => b.id === 'BANQUE_DU_CAIRE');
+                        else if (nameLower.includes('فودافون') || nameLower.includes('vodafone')) matchedBank = banksData.find(b => b.id === 'VODAFONE_CASH');
+                        else if (nameLower.includes('أورانج') || nameLower.includes('orange')) matchedBank = banksData.find(b => b.id === 'ORANGE_CASH');
+                        else if (nameLower.includes('اتصالات') || nameLower.includes('etisalat')) matchedBank = banksData.find(b => b.id === 'ETISALAT_CASH');
+                        else if (nameLower.includes('انستا') || nameLower.includes('instapay')) matchedBank = banksData.find(b => b.id === 'INSTAPAY');
+
+                        if (matchedBank) {
+                            try {
+                                await fetch('/api/treasury/channels', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ type: tr.type, name: tr.name, color: matchedBank.color || tr.color, bankId: matchedBank.id, logoPath: matchedBank.logoPath })
+                                });
+                                needsRefresh = true;
+                            } catch (e) { }
+                        }
+                    }
+                }
+                if (needsRefresh) {
+                    const res2 = await fetch('/api/treasury');
+                    data = await res2.json();
+                }
+                setTreasuries(data);
+            }
         } catch (e) { console.error(e); setTreasuries([]); } finally { setLoading(false); }
+    };
+
+    const handleSelectBank = (bank: FinancialInstitution) => {
+        setBankSearch(bank.name);
+        setIsDropdownOpen(false);
+        if (bank.type === 'CUSTOM') {
+            setChannelForm({ ...channelForm, bankId: 'CUSTOM', type: '', name: '', color: bank.color, logoPath: '' });
+        } else {
+            setChannelForm({ ...channelForm, type: bank.defaultCode, name: bank.name, color: bank.color, bankId: bank.id, logoPath: bank.logoPath });
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -83,7 +145,11 @@ export default function TreasuryPage() {
     };
 
     const handleSaveChannel = async () => {
-        if (!channelForm.type || !channelForm.name) return alert('يرجى إدخال النوع والاسم');
+        console.log('Attempting to save channel:', channelForm);
+        if (!channelForm.type || !channelForm.name) {
+            console.warn('Missing type or name:', channelForm);
+            return alert('يرجى إدخال النوع والاسم');
+        }
         setIsSavingChannel(true);
         try {
             const res = await fetch('/api/treasury/channels', {
@@ -91,12 +157,20 @@ export default function TreasuryPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(channelForm)
             });
+            console.log('API Response status:', res.status);
             if (res.ok) {
-                fetchTreasuries();
-                setChannelForm({ type: '', name: '', color: '#29b6f6' });
+                await fetchTreasuries();
+                setChannelForm({ type: '', name: '', color: '#29b6f6', bankId: '', logoPath: '' });
+                setBankSearch('');
+                alert('✅ تم حفظ القناة بنجاح!');
+            } else {
+                const data = await res.json();
+                console.error('API Error details:', data);
+                alert('❌ غير قادر على الحفظ: ' + (data.error || 'حدث خطأ غير معروف'));
             }
         } catch (e) {
-            console.error(e);
+            console.error('Fetch exception:', e);
+            alert('❌ فشل الاتصال بالخادم، يرجى المحاولة لاحقاً');
         } finally {
             setIsSavingChannel(false);
         }
@@ -113,6 +187,13 @@ export default function TreasuryPage() {
                 fetchTreasuries();
             }
         } catch (e) { console.error(e); }
+    };
+
+    const handlePageSizeChange = (val: string) => {
+        const newSize = val === 'ALL' ? 'ALL' : parseInt(val, 10);
+        setPageSize(newSize);
+        localStorage.setItem('erp_treasury_pageSize', val);
+        setCurrentPage(1);
     };
 
     const CHANNEL_ICONS: Record<string, string> = { CASH: '💵', BANK: '🏦', VODAFONE: '📱' };
@@ -147,398 +228,453 @@ export default function TreasuryPage() {
 
     useEffect(() => { setCurrentPage(1); }, [fType, fTreasury, fSearch, fDateFrom, fDateTo]);
 
-    const totalPages = Math.ceil(filteredTxns.length / pageSize);
+    const totalPages = pageSize === 'ALL' ? 1 : Math.ceil(filteredTxns.length / pageSize);
     const paginatedTxns = useMemo(() => {
+        if (pageSize === 'ALL') return filteredTxns;
         const start = (currentPage - 1) * pageSize;
         return filteredTxns.slice(start, start + pageSize);
-    }, [filteredTxns, currentPage]);
+    }, [filteredTxns, currentPage, pageSize]);
 
     const filteredIn = filteredTxns.filter((t: any) => t.type === 'IN').reduce((s: number, t: any) => s + Number(t.amount), 0);
     const filteredOut = filteredTxns.filter((t: any) => t.type === 'OUT').reduce((s: number, t: any) => s + Number(t.amount), 0);
 
-    // ── Print filtered treasury report ────────────────────────────────────────
-    const printTreasuryReport = () => {
-        const win = window.open('', '_blank');
-        if (!win) return;
+    // ── Build export props for treasury list ─────────────────────────────
+    const buildTreasuryExportProps = () => {
+        if (filteredTxns.length === 0) return null;
 
-        const s = JSON.parse(localStorage.getItem('erp_settings') || '{}');
-        const t = JSON.parse(localStorage.getItem('erp_print_template') || '{}');
-        const logo = t.printLogoCustom || s.appLogo || '';
-        const accentColor = t.accentColor || s.primaryColor || '#ab47bc';
-        const coName = t.companyName || s.appName || 'Stand Masr';
-        const shapeMap: Record<string, string> = { circle: '50%', square: '0', rect: '6px', rounded: '10px' };
-        const logoRadius = shapeMap[s.logoShape || 'rounded'] || '10px';
-        const logoSizePx = t.printLogoSize || '70';
-
-        const logoImg = logo && t.showLogo !== false
-            ? `<img src="${logo}" style="width:${logoSizePx}px;height:${logoSizePx}px;object-fit:contain;border-radius:${logoRadius};display:block" />`
-            : '';
-
-        const filterSummary = [
-            fType !== 'ALL' ? (fType === 'IN' ? 'إيرادات فقط' : 'مصروفات فقط') : '',
-            fTreasury !== 'ALL' ? getTreasuryDisplay(fTreasury).label.replace(/[^أ-ي ]/g, '').trim() : '',
-            fSearch ? `بحث: "${fSearch}"` : '',
-            fDateFrom ? `من: ${fDateFrom}` : '',
-            fDateTo ? `إلى: ${fDateTo}` : '',
-        ].filter(Boolean).join(' | ') || 'الكل';
-
-        const rows = filteredTxns.map((txn: any) => {
+        const tableHeaders = ['التاريخ', 'الخزينة المستهدفة', 'النوع', 'وصف الحركة', 'المرجع', `القيمة (${sym})`];
+        const tableRows = filteredTxns.map((txn: any) => {
             const isIn = txn.type === 'IN';
             const m = getTreasuryDisplay(txn.treasuryType);
-            return `
-                <tr>
-                    <td style="text-align:center;">${new Date(txn.createdAt).toLocaleDateString('ar-EG')}</td>
-                    <td style="color:${m.color};font-weight:bold">${m.label}</td>
-                    <td style="color:${isIn ? '#1a7a3c' : '#c0392b'};font-weight:bold;text-align:center;">${isIn ? '⬆ وارد' : '⬇ صادر'}</td>
-                    <td>${txn.description || '-'}</td>
-                    <td style="text-align:center;">${txn.refNumber || '-'}</td>
-                    <td style="color:${isIn ? '#1a7a3c' : '#c0392b'};font-weight:bold;text-align:center" dir="ltr">${isIn ? '+' : '-'}${Number(txn.amount).toLocaleString('ar-EG')}</td>
-                </tr>`;
-        }).join('');
+            return [
+                new Date(txn.createdAt).toLocaleDateString('ar-EG'),
+                m.label.replace(/[^أ-ي0-9a-zA-Z ]/g, '').trim(),
+                isIn ? 'وارد' : 'صادر',
+                txn.description || '-',
+                txn.refNumber || '-',
+                `${isIn ? '+' : '-'}${Number(txn.amount).toLocaleString('ar-EG')}`
+            ];
+        });
 
-        const headerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;border-bottom:2px solid ${accentColor};padding-bottom:15px">
-                <div style="display:flex;gap:15px">
-                    ${logoImg}
-                    <div>
-                        <h1 style="margin:0 0 3px;font-size:1.35rem;color:${accentColor}">${coName}</h1>
-                        ${t.companySubtitle ? `<p style="margin:2px 0;color:#666;font-size:0.82rem">${t.companySubtitle}</p>` : ''}
-                        ${t.companyPhone ? `<p style="margin:2px 0;font-size:0.8rem">📞 ${t.companyPhone}</p>` : ''}
-                        ${t.companyAddress ? `<p style="margin:2px 0;font-size:0.8rem">📍 ${t.companyAddress}</p>` : ''}
+        const filterSummaryText = [
+            fType !== 'ALL' ? (fType === 'IN' ? 'إيرادات فقط' : 'مصروفات فقط') : '',
+            fTreasury !== 'ALL' ? getTreasuryDisplay(fTreasury).label.replace(/[^أ-ي0-9a-zA-Z ]/g, '').trim() : '',
+            fSearch ? `بحث: "${fSearch}"` : '',
+            fDateFrom ? `من: ${fDateFrom}` : '',
+            fDateTo ? `إلى: ${fDateTo}` : ''
+        ].filter(Boolean).join(' | ') || 'الكل';
+
+        const totalSysBalance = treasuries.reduce((s: number, tr) => s + tr.balance, 0);
+
+        return {
+            documentTitle: 'تقرير الحركات المالية (الخزينة)',
+            fileName: `Treasury_Report_${new Date().toISOString().split('T')[0]}`,
+            metaInfo: [
+                ['تاريخ التقرير', new Date().toLocaleDateString('ar-EG')],
+                ['نطاق الفلتر', filterSummaryText],
+                ['إجمالي حركات التقرير', String(filteredTxns.length)]
+            ] as [string, string][],
+            tableHeaders,
+            tableRows,
+            summaryRows: [
+                ['إجمالي الإيداعات', `${filteredIn.toLocaleString('ar-EG')} ${sym}`],
+                ['إجمالي السحوبات', `${filteredOut.toLocaleString('ar-EG')} ${sym}`],
+                ['صافي حركة التقرير', `${(filteredIn - filteredOut).toLocaleString('ar-EG')} ${sym}`],
+                ['السيولة الإجمالية لكل الخزائن', `${totalSysBalance.toLocaleString('ar-EG')} ${sym}`]
+            ] as [string, string][]
+        };
+    };
+
+    const handlePrintTreasuryReport = async () => {
+        const props = buildTreasuryExportProps();
+        if (!props) return;
+
+        const config = await fetchReportTemplate();
+        const symVal = config.currencySymbol || 'ج.م';
+        const dateStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        const rowsHtml = props.tableRows.map(row => `
+            <tr>
+                <td>${row[0]}</td>
+                <td>${row[1]}</td>
+                <td style="text-align:center"><span style="padding:2px 8px;border-radius:6px;font-size:0.8rem;background:${row[2] === 'وارد' ? '#dcfce7' : '#fee2e2'};color:${row[2] === 'وارد' ? '#166534' : '#991b1b'}">${row[2]}</span></td>
+                <td>${row[3]}</td>
+                <td>${row[4]}</td>
+                <td style="text-align:center;font-weight:700;color:${row[5].startsWith('+') ? '#166534' : '#991b1b'}">${row[5]}</td>
+            </tr>
+        `).join('');
+
+        const summaryHtml = `
+            <div style="margin-top: 30px; width: 350px; margin-right: auto; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+                ${props.summaryRows.map(s => `
+                    <div style="display:flex;justify-content:space-between;padding:12px 15px;border-bottom:1px solid #eee;">
+                        <span style="color:#64748b; font-size: 0.9rem;">${s[0]}</span>
+                        <span style="font-weight:800;color:#1e293b; font-size: 1rem;">${s[1]}</span>
                     </div>
-                </div>
-                <div style="text-align:left">
-                    <h2 style="margin:0 0 5px;color:${accentColor};font-size:1.15rem">📊 تقرير الحركات المالية</h2>
-                    <p style="margin:2px 0;font-size:0.83rem"><strong>تاريخ التقرير:</strong> ${new Date().toLocaleDateString('ar-EG')}</p>
-                </div>
+                `).join('')}
             </div>
         `;
 
-        const balRows = treasuries.map(tr => {
-            const b = tr.balance;
-            const m = getTreasuryDisplay(tr.type);
-            return `<div style="display:flex;justify-content:space-between;padding:8px;border-bottom:1px dashed #eee">
-                      <span style="color:${m.color};font-weight:bold">${m.label}</span>
-                      <span style="font-weight:bold;color:${b >= 0 ? '#1a7a3c' : '#c0392b'}" dir="ltr">${b.toLocaleString('ar-EG')} ج.م</span>
-                    </div>`;
-        }).join('');
+        const bodyHtml = `
+            <div style="margin-bottom: 20px; font-size: 0.85rem; color: #666; background: #f1f5f9; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                ${props.metaInfo.map(m => `<div><strong>${m[0]}:</strong> ${m[1]}</div>`).join('')}
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>التاريخ</th><th>الخزينة</th><th>النوع</th><th>البيان</th><th>المرجع</th><th>القيمة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+            ${summaryHtml}
+        `;
 
-        const totalBal = treasuries.reduce((s: number, tr) => s + tr.balance, 0);
+        const html = generatePrintHtml(bodyHtml, props.documentTitle, config);
 
-        win.document.write(`
-            <html dir="rtl">
-            <head>
-                <title>تقرير سجل الحركات المالية</title>
-                <style>
-                    body { font-family: Tahoma, Arial, sans-serif; margin: 30px; font-size: 0.95rem; }
-                    .filter-bar { background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 10px 15px; font-size: 0.85rem; margin-bottom: 20px; color: #444; }
-                    .flex-container { display: flex; gap: 30px; margin-bottom: 25px; }
-                    .balances-box { width: 320px; border: 2px solid ${accentColor}; border-radius: 8px; padding: 15px; background: #fafafa; }
-                    .summary-box { flex: 1; border: 2px solid ${accentColor}; border-radius: 8px; padding: 15px; background: #fafafa; display: flex; flex-direction: column; justify-content: center; }
-                    table { width: 100%; border-collapse: collapse; margin-block: 20px; font-size: 0.9rem; }
-                    th, td { border: 1px solid #ddd; padding: 10px; text-align: right; }
-                    th { background-color: ${accentColor}; color: #fff; text-align: center; }
-                    tr:nth-child(even) { background-color: #f9f9f9; }
-                    .net-row td { background: #fdfdfd; font-weight: bold; font-size: 1.05rem; }
-                    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-                </style>
-            </head>
-            <body onload="window.print()">
-                ${headerHTML}
-                
-                <div class="filter-bar"><strong>🔍 نطاق التقرير / الفلتر:</strong> ${filterSummary}</div>
-                
-                <div class="flex-container">
-                    <div class="balances-box">
-                        <h3 style="margin-top:0;margin-bottom:15px;color:${accentColor};border-bottom:1px solid #ddd;padding-bottom:5px">💰 ملخص الأرصدة الحالية في الخزائن</h3>
-                        ${balRows}
-                        <div style="margin-top:10px;padding-top:10px;border-top:2px solid ${accentColor};display:flex;justify-content:space-between;font-weight:bold;font-size:1.1rem;color:${accentColor}">
-                            <span>السيولة الإجمالية :</span>
-                            <span dir="ltr">${totalBal.toLocaleString('ar-EG')} ج.م</span>
-                        </div>
-                    </div>
-                    
-                    <div class="summary-box">
-                        <h3 style="margin-top:0;color:${accentColor};text-align:center;margin-bottom:20px">صافي حركة التقرير الحالي (${filteredTxns.length} حركة)</h3>
-                        <div style="display:flex;justify-content:space-around;text-align:center;margin-bottom:15px">
-                            <div>
-                                <div style="color:#777;font-size:0.9rem">إجمالي الوارد</div>
-                                <div style="color:#1a7a3c;font-weight:bold;font-size:1.4rem" dir="ltr">+${filteredIn.toLocaleString('ar-EG')} ج.م</div>
-                            </div>
-                            <div>
-                                <div style="color:#777;font-size:0.9rem">إجمالي الصادر</div>
-                                <div style="color:#c0392b;font-weight:bold;font-size:1.4rem" dir="ltr">-${filteredOut.toLocaleString('ar-EG')} ج.م</div>
-                            </div>
-                        </div>
-                        <div style="text-align:center;padding:15px;background:#eee;border-radius:8px;font-size:1.2rem;font-weight:bold">
-                            <span style="color:#555">صافي الفترة المحددة: </span>
-                            <span style="color:${filteredIn - filteredOut >= 0 ? '#1a7a3c' : '#c0392b'}" dir="ltr">${(filteredIn - filteredOut).toLocaleString('ar-EG')} ج.م</span>
-                        </div>
-                    </div>
-                </div>
-
-                <h3 style="color:${accentColor};margin:0 0 10px">📋 سجل تفاصيل الحركات</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width:90px">التاريخ</th>
-                            <th style="width:140px">الخزينة المستهدفة</th>
-                            <th style="width:80px">النوع</th>
-                            <th>وصف ومعلومات الحركة</th>
-                            <th style="width:120px">المرجع</th>
-                            <th style="width:110px">القيمة (ج.م)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows || '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px">لا توجد حركات مطابقة للبحث أو الفلتر المختار</td></tr>'}
-                    </tbody>
-                </table>
-                
-                <div style="margin-top:30px;text-align:center;color:#888;font-size:0.8rem;border-top:1px solid #eee;padding-top:10px">
-                    ${t.footerText || 'تم إصدار التقرير بواسطة نظام Stand Masr ERP'}
-                </div>
-            </body>
-            </html>
-        `);
-        win.document.close();
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        iframe.contentWindow?.document.open();
+        iframe.contentWindow?.document.write(html);
+        iframe.contentWindow?.document.close();
+        iframe.onload = () => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setTimeout(() => document.body.removeChild(iframe), 2000);
+        };
     };
 
     const hasFilters = fType !== 'ALL' || fTreasury !== 'ALL' || fSearch || fDateFrom || fDateTo;
 
     return (
-        <div className="animate-fade-in">
-            <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+        <div className="unified-container animate-fade-in">
+            <header className="page-header">
                 <div>
-                    <h1>الخزينة المتعددة والمصروفات</h1>
-                    <p>متابعة وتوزيع الأرصدة وإدارة التدفقات النقدية والبنكية</p>
+                    <h1 className="page-title">💰 الخزينة المتعددة والمصروفات</h1>
+                    <p className="page-subtitle">متابعة وتوزيع الأرصدة وإدارة التدفقات النقدية والبنكية في الوقت الفعلي</p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="header-actions">
                     {isAdmin && (
-                        <button onClick={() => setShowManageChannels(true)} className="btn-secondary" style={{ padding: '10px 20px' }}>
-                            ⚙️ إدارة الحسابات / القنوات
+                        <button onClick={() => setShowManageChannels(true)} className="btn-modern btn-secondary">
+                            ⚙️ إدارة القنوات
                         </button>
                     )}
-                    <button onClick={printTreasuryReport} className="btn-primary" style={{ padding: '10px 20px', background: '#ab47bc' }}>
-                        🖨 طباعة جرد الخزينة PDF
+                    <button onClick={handlePrintTreasuryReport} className="btn-modern btn-primary">
+                        🖨️ طباعة تقرير الحركة
                     </button>
                 </div>
             </header>
 
             {/* Balance Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '1.5rem' }}>
+            <div className="treasury-status-grid">
                 {treasuries.map(tr => {
                     const meta = getTreasuryDisplay(tr.type);
                     return (
-                        <div key={tr.id} className="glass-panel" style={{ borderTop: `4px solid ${meta.color}`, textAlign: 'center', padding: '1rem' }}>
-                            <h3 style={{ color: '#fff', marginBottom: '6px', fontSize: '0.85rem' }}>{meta.label}</h3>
-                            <p style={{ fontSize: '1.4rem', fontWeight: 900, margin: 0, color: meta.color }}>
-                                {tr.balance.toLocaleString('ar-EG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} <span style={{ fontSize: '0.75rem', color: '#aaa' }}>ج.م</span>
-                            </p>
+                        <div key={tr.id} className="glass-panel balance-card" style={{ borderTop: `4px solid ${meta.color}`, cursor: 'pointer', userSelect: 'none' }} onClick={() => setShowBalances(!showBalances)} title="انقر لإظهار/إخفاء الأرصدة">
+                            <h3 className="card-label">{meta.label}</h3>
+                            <div className="card-amount" style={{ color: meta.color }}>
+                                {showBalances ? tr.balance.toLocaleString('en-US') : '****'} <span className="card-currency">{sym}</span>
+                            </div>
                         </div>
                     );
                 })}
             </div>
 
+            {/* Tabs */}
+            <div className="tabs-nav-treasury">
+                <button onClick={() => setActiveTab('TREASURY')} className={`btn-modern tab-btn ${activeTab === 'TREASURY' ? 'btn-primary' : 'btn-secondary'}`}>
+                    🏦 حركة الخزائن العام
+                </button>
+                <button onClick={() => setActiveTab('EXPENSES')} className={`btn-modern tab-btn expenses-btn ${activeTab === 'EXPENSES' ? 'active' : ''}`}>
+                    🧾 تسجيل مصروفات
+                </button>
+            </div>
+
             {/* Main Layout Area */}
-            <div className="responsive-grid" style={{ gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
-                <form onSubmit={handleSubmit} className="glass-panel" style={{ alignSelf: 'start', width: '100%' }}>
-                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>تسجيل حركة (وارد/صادر)</h3>
-                    {success && <div style={{ color: '#66bb6a', marginBottom: '1rem', fontSize: '0.9rem' }}>{success}</div>}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                        <div>
-                            <label htmlFor="tr_acc">الحساب / الخزنة المستهدفة</label>
-                            <select id="tr_acc" className="input-glass" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
-                                {treasuries.map(tr => (
-                                    <option key={tr.id} value={tr.type}>{getTreasuryDisplay(tr.type).label}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="tr_type">نوع الحركة</label>
-                            <select id="tr_type" className="input-glass" value={form.transactionType} onChange={e => setForm({ ...form, transactionType: e.target.value })}>
-                                <option value="IN">وارد (+ إيداع/تحصيل)</option>
-                                <option value="OUT">صادر (- مصروف/شراء/سلفة)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="tr_chan">قناة الدفع</label>
-                            <select id="tr_chan" className="input-glass" value={form.channel} onChange={e => setForm({ ...form, channel: e.target.value, refNumber: '' })}>
-                                <option value="CASH">نقدي (كاش)</option>
-                                <option value="BANK">تحويل بنكي</option>
-                                <option value="VODAFONE">فودافون كاش</option>
-                            </select>
-                        </div>
-                        {(form.channel === 'BANK' || form.channel === 'VODAFONE') && (
-                            <div className="animate-fade-in" style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                                <label htmlFor="tr_ref" style={{ color: '#29b6f6' }}>{form.channel === 'BANK' ? 'اسم البنك / رقم الحساب المحول منه' : 'رقم الموبايل المحول منه'}</label>
-                                <input id="tr_ref" type="text" className="input-glass" value={form.refNumber} onChange={e => setForm({ ...form, refNumber: e.target.value })} placeholder="البيان" required />
+            {activeTab === 'TREASURY' ? (
+                <div className="reports-grid-treasury">
+                    <form onSubmit={handleSubmit} className="glass-panel report-sidebar-menu form-sticky">
+                        <h3 className="settings-section-label txn-form-title">تسجيل حركة جديدة</h3>
+                        {success && <div className="sh-badge paid txn-success-badge">{success}</div>}
+                        <div className="txn-fields-wrapper">
+                            <div>
+                                <label htmlFor="tr_acc">الحساب / الخزنة المستهدفة</label>
+                                <select id="tr_acc" className="input-glass" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+                                    {treasuries.map(tr => (
+                                        <option key={tr.id} value={tr.type}>{getTreasuryDisplay(tr.type).label}</option>
+                                    ))}
+                                </select>
                             </div>
-                        )}
-                        <div>
-                            <label htmlFor="tr_amt">المبلغ (جنيه)</label>
-                            <input id="tr_amt" type="number" step="0.01" className="input-glass" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required min="0.01" />
-                        </div>
-                        <div>
-                            <label htmlFor="tr_desc">الوصف</label>
-                            <input id="tr_desc" type="text" className="input-glass" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required />
-                        </div>
-                        <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem', background: form.transactionType === 'IN' ? '#66bb6a' : '#E35E35' }}>
-                            {form.transactionType === 'IN' ? 'تسجيل كإيراد +' : 'خصم كمصروف -'}
-                        </button>
-                    </div>
-                </form>
-
-                <div className="glass-panel">
-                    {/* ── Filter Bar ── */}
-                    <div style={{ marginBottom: '1.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
-                            <h3 style={{ margin: 0 }}>
-                                سجل الحركات المالية
-                                {hasFilters && <span style={{ fontSize: '0.78rem', color: '#ffa726', marginRight: '8px' }}>🔍 فلتر نشط</span>}
-                            </h3>
-                            {hasFilters && (
-                                <button onClick={() => { setFType('ALL'); setFTreasury('ALL'); setFSearch(''); setFDateFrom(''); setFDateTo(''); }}
-                                    style={{ padding: '4px 12px', background: 'rgba(255,82,82,0.1)', border: '1px solid #ff5252', color: '#ff5252', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontFamily: 'inherit' }}>
-                                    ✕ مسح الفلتر
-                                </button>
+                            <div>
+                                <label htmlFor="tr_type">نوع الحركة</label>
+                                <select id="tr_type" className="input-glass" value={form.transactionType} onChange={e => setForm({ ...form, transactionType: e.target.value })}>
+                                    <option value="IN">وارد (+ إيداع/تحصيل)</option>
+                                    <option value="OUT">صادر (- مصروف/شراء/سلفة)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="tr_chan">قناة الدفع</label>
+                                <select id="tr_chan" className="input-glass" value={form.channel} onChange={e => setForm({ ...form, channel: e.target.value, refNumber: '' })}>
+                                    <option value="CASH">نقدي (كاش)</option>
+                                    <option value="BANK">تحويل بنكي</option>
+                                    <option value="VODAFONE">فودافون كاش</option>
+                                </select>
+                            </div>
+                            {(form.channel === 'BANK' || form.channel === 'VODAFONE') && (
+                                <div className="animate-fade-in channel-details-box">
+                                    <label htmlFor="tr_ref" className="channel-ref-label">{form.channel === 'BANK' ? 'اسم البنك / رقم الحساب المحول منه' : 'رقم الموبايل المحول منه'}</label>
+                                    <input id="tr_ref" type="text" className="input-glass" value={form.refNumber} onChange={e => setForm({ ...form, refNumber: e.target.value })} placeholder="البيان" required />
+                                </div>
                             )}
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                            {/* Type filter */}
-                            {[{ k: 'ALL', l: 'الكل' }, { k: 'IN', l: '⬆ إيرادات' }, { k: 'OUT', l: '⬇ مصروفات' }].map(opt => (
-                                <button key={opt.k} onClick={() => setFType(opt.k)}
-                                    style={{ padding: '5px 12px', borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.81rem', fontWeight: fType === opt.k ? 700 : 400, background: fType === opt.k ? (opt.k === 'IN' ? '#66bb6a' : opt.k === 'OUT' ? '#E35E35' : 'var(--primary-color)') : 'transparent', color: fType === opt.k ? '#fff' : '#aaa', border: `1px solid ${fType === opt.k ? 'transparent' : 'rgba(255,255,255,0.15)'}` }}>
-                                    {opt.l}
-                                </button>
-                            ))}
-                            <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)' }} />
-                            {/* Treasury filter */}
-                            <label htmlFor="f_tr" className="sr-only">تصفية حسب الخزينة</label>
-                            <select id="f_tr" value={fTreasury} onChange={e => setFTreasury(e.target.value)}
-                                style={{ background: '#1a1c22', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#ddd', padding: '5px 10px', fontFamily: 'inherit', fontSize: '0.81rem', cursor: 'pointer' }} title="اختر الخزينة">
-                                <option value="ALL">🏛 كل الخزائن</option>
-                                {treasuries.map(tr => (
-                                    <option key={tr.id} value={tr.type}>{getTreasuryDisplay(tr.type).label.replace(/[^أ-ي ]/g, '').trim()}</option>
-                                ))}
-                            </select>
-                            {/* Search */}
-                            <label htmlFor="f_search" className="sr-only">بحث في سجل الحركات</label>
-                            <input id="f_search" type="text" value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="بحث في الوصف.."
-                                style={{ background: '#1a1c22', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#ddd', padding: '5px 10px', fontFamily: 'inherit', fontSize: '0.81rem', minWidth: '130px', flex: 1 }} title="البحث في الوصف" />
-                            {/* Date range */}
-                            <label htmlFor="f_d1" className="sr-only">من تاريخ</label>
-                            <input id="f_d1" type="date" value={fDateFrom} onChange={e => setFDateFrom(e.target.value)}
-                                style={{ background: '#1a1c22', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#ddd', padding: '5px 8px', fontFamily: 'inherit', fontSize: '0.79rem' }} title="من تاريخ" />
-                            <span style={{ color: '#666', fontSize: '0.8rem' }}>—</span>
-                            <label htmlFor="f_d2" className="sr-only">إلى تاريخ</label>
-                            <input id="f_d2" type="date" value={fDateTo} onChange={e => setFDateTo(e.target.value)}
-                                style={{ background: '#1a1c22', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#ddd', padding: '5px 8px', fontFamily: 'inherit', fontSize: '0.79rem' }} title="إلى تاريخ" />
-                        </div>
-
-                        {/* Summary of filtered */}
-                        {filteredTxns.length > 0 && (
-                            <div style={{ display: 'flex', gap: '16px', marginTop: '10px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '0.83rem', color: '#919398' }}>{filteredTxns.length} حركة معروضة</span>
-                                <span style={{ fontSize: '0.83rem', color: '#66bb6a' }}>⬆ إيرادات: +{filteredIn.toFixed(0)} ج.م</span>
-                                <span style={{ fontSize: '0.83rem', color: '#E35E35' }}>⬇ مصروفات: -{filteredOut.toFixed(0)} ج.م</span>
-                                <span style={{ fontSize: '0.83rem', color: filteredIn - filteredOut >= 0 ? '#66bb6a' : '#E35E35', fontWeight: 'bold' }}>
-                                    صافي: {(filteredIn - filteredOut).toFixed(0)} ج.م
-                                </span>
+                            <div>
+                                <label htmlFor="tr_amt">المبلغ (جنيه)</label>
+                                <input id="tr_amt" type="number" step="0.01" className="input-glass" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required min="0.01" />
                             </div>
-                        )}
-                    </div>
+                            <div>
+                                <label htmlFor="tr_desc">الوصف</label>
+                                <input id="tr_desc" type="text" className="input-glass" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required />
+                            </div>
+                            <button type="submit" className={`btn-modern btn-submit-txn ${form.transactionType === 'IN' ? 'in-txn' : 'out-txn'}`}>
+                                {form.transactionType === 'IN' ? 'تسجيل كإيراد +' : 'خصم كمصروف -'}
+                            </button>
+                        </div>
+                    </form>
 
-                    {loading ? <p>جاري التحميل...</p> : (
-                        <div className="table-container" style={{ maxHeight: '500px' }}>
-                            <table className="table-glass">
-                                <thead>
-                                    <tr>
-                                        <th>تاريخ الحركة</th>
-                                        <th>الخزنة</th>
-                                        <th>النوع</th>
-                                        <th>القناة والمرجع</th>
-                                        <th>الوصف</th>
-                                        <th>القيمة</th>
-                                        {isAdmin && <th>إجراءات</th>}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {paginatedTxns.map((txn: any) => {
-                                        const isIn = txn.type === 'IN';
-                                        const isCollection = txn.clientPaymentId;
-                                        return (
-                                            <tr key={txn.id} style={{ background: isCollection ? 'rgba(41,182,246,0.04)' : 'transparent' }}>
-                                                <td style={{ fontSize: '0.82rem' }}>{new Date(txn.createdAt).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}<br /><span style={{ fontSize: '0.7rem', color: '#666' }}>{new Date(txn.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span></td>
-                                                <td><span style={{ color: getTreasuryDisplay(txn.treasuryType).color, fontSize: '0.82rem' }}>{getTreasuryDisplay(txn.treasuryType).label}</span></td>
-                                                <td><span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', background: isIn ? 'rgba(102,187,106,0.15)' : 'rgba(227,94,53,0.15)', color: isIn ? '#66bb6a' : '#E35E35' }}>{isIn ? (isCollection ? '💵 تحصيل' : '⬆ إيداع') : '⬇ صرف'}</span></td>
-                                                <td><span style={{ fontSize: '0.82rem' }}>{CHANNEL_ICONS[txn.channel] || ''} {CHANNEL_LABEL[txn.channel] || txn.channel}</span>{txn.refNumber && <div style={{ fontSize: '0.75rem', color: '#888' }}>({txn.refNumber})</div>}</td>
-                                                <td style={{ fontSize: '0.82rem', maxWidth: '200px' }}>{txn.description}</td>
-                                                <td style={{ fontWeight: 'bold', color: isIn ? '#66bb6a' : '#E35E35', fontSize: '1rem' }}>{isIn ? '+' : '-'}{Number(txn.amount).toFixed(0)}</td>
-                                                {isAdmin && (
-                                                    <td>
-                                                        <button onClick={() => handleDelete(txn.id)} style={{ background: 'transparent', border: 'none', color: '#ff5252', cursor: 'pointer', fontSize: '1.2rem' }} title="حذف">🗑️</button>
-                                                    </td>
-                                                )}
-                                            </tr>
-                                        );
-                                    })}
-                                    {filteredTxns.length === 0 && (
-                                        <tr><td colSpan={isAdmin ? 7 : 6} style={{ textAlign: 'center', padding: '2rem', color: '#555' }}>
-                                            {allTxns.length === 0 ? 'لا توجد حركات مسجلة.' : 'لا توجد حركات تطابق معايير الفلترة.'}
-                                        </td></tr>
-                                    )}
-                                </tbody>
-                            </table>
-                            {totalPages > 1 && (
-                                <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', padding: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '10px' }}>
-                                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn-secondary" style={{ opacity: currentPage === 1 ? 0.3 : 1 }}>السابق</button>
-                                    <span style={{ alignSelf: 'center', fontSize: '0.9rem' }}>صفحة {currentPage} من {totalPages}</span>
-                                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="btn-secondary" style={{ opacity: currentPage === totalPages ? 0.3 : 1 }}>التالي</button>
+                    <div className="glass-panel results-view-panel">
+                        {/* ── Filter Bar ── */}
+                        <div className="txn-list-header-wrapper">
+                            <div className="txn-list-title-row">
+                                <h3 className="txn-list-title">
+                                    سجل الحركات المالية
+                                    {hasFilters && <span className="active-filter-txt">🔍 فلتر نشط</span>}
+                                </h3>
+                                {hasFilters && (
+                                    <button onClick={() => { setFType('ALL'); setFTreasury('ALL'); setFSearch(''); setFDateFrom(''); setFDateTo(''); }}
+                                        className="clear-filter-btn">
+                                        ✕ مسح الفلتر
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="filter-pills-bar">
+                                {/* Type filter */}
+                                {[{ k: 'ALL', l: 'الكل' }, { k: 'IN', l: '⬆ إيرادات' }, { k: 'OUT', l: '⬇ مصروفات' }].map(opt => (
+                                    <button key={opt.k} onClick={() => setFType(opt.k)}
+                                        className={`filter-pill ${fType === opt.k ? 'active' : ''} ${fType === opt.k ? (opt.k === 'IN' ? 'in-pill' : opt.k === 'OUT' ? 'out-pill' : 'primary-pill') : ''}`}>
+                                        {opt.l}
+                                    </button>
+                                ))}
+                                <div className="filter-divider" />
+                                {/* Treasury filter */}
+                                <label htmlFor="f_tr" className="sr-only">تصفية حسب الخزينة</label>
+                                <select id="f_tr" value={fTreasury} onChange={e => setFTreasury(e.target.value)}
+                                    className="filter-select" title="اختر الخزينة">
+                                    <option value="ALL">🏛 كل الخزائن</option>
+                                    {treasuries.map(tr => (
+                                        <option key={tr.id} value={tr.type}>{getTreasuryDisplay(tr.type).label.replace(/[^أ-ي ]/g, '').trim()}</option>
+                                    ))}
+                                </select>
+                                {/* Search */}
+                                <label htmlFor="f_search" className="sr-only">بحث في سجل الحركات</label>
+                                <input id="f_search" type="text" value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="بحث في الوصف.."
+                                    className="filter-input search-input" title="البحث في الوصف" />
+                                {/* Date range */}
+                                <label htmlFor="f_d1" className="sr-only">من تاريخ</label>
+                                <input id="f_d1" type="date" value={fDateFrom} onChange={e => setFDateFrom(e.target.value)}
+                                    className="filter-date" title="من تاريخ" />
+                                <span className="date-separator">—</span>
+                                <label htmlFor="f_d2" className="sr-only">إلى تاريخ</label>
+                                <input id="f_d2" type="date" value={fDateTo} onChange={e => setFDateTo(e.target.value)}
+                                    className="filter-date" title="إلى تاريخ" />
+                            </div>
+
+                            {/* Summary of filtered */}
+                            {filteredTxns.length > 0 && (
+                                <div className="filter-summary-row">
+                                    <span className="results-count-txt">{filteredTxns.length} حركة معروضة</span>
+                                    <span className="sh-badge paid summary-badge">إيرادات: +{filteredIn.toLocaleString('en-US')} {sym}</span>
+                                    <span className="sh-badge unpaid summary-badge">مصروفات: -{filteredOut.toLocaleString('en-US')} {sym}</span>
+                                    <span className={`net-change-val ${filteredIn - filteredOut >= 0 ? 'positive' : 'negative'}`}>
+                                        صافي: {(filteredIn - filteredOut).toLocaleString('en-US')} {sym}
+                                    </span>
                                 </div>
                             )}
                         </div>
-                    )}
+
+                        {loading ? <p>جاري التحميل...</p> : (
+                            <div className="table-container table-wrapper-treasury">
+                                <table className="table-glass high-density responsive-cards treasury-table">
+                                    <thead>
+                                        <tr>
+                                            <th>التاريخ</th>
+                                            <th>الخزنة</th>
+                                            <th>النوع</th>
+                                            <th>القناة</th>
+                                            <th>البيان</th>
+                                            <th style={{ textAlign: 'center' }}>القيمة</th>
+                                            {isAdmin && <th style={{ textAlign: 'center' }}>إجراءات</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paginatedTxns.map((txn: any) => {
+                                            const isIn = txn.type === 'IN';
+                                            const isCollection = txn.clientPaymentId;
+                                            return (
+                                                <tr key={txn.id} className={isCollection ? 'txn-row-collection' : ''}>
+                                                    <td data-label="التاريخ" className="txn-datetime">
+                                                        {new Date(txn.createdAt).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                                        <br />
+                                                        <span className="txn-time">{new Date(txn.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                    </td>
+                                                    <td data-label="الخزنة">
+                                                        <span className="txn-treasury-btn" style={{ color: getTreasuryDisplay(txn.treasuryType).color }}>{getTreasuryDisplay(txn.treasuryType).label}</span>
+                                                    </td>
+                                                    <td data-label="النوع">
+                                                        <span className={`txn-type-badge ${isIn ? 'in' : 'out'}`}>{isIn ? (isCollection ? '💵 تحصيل' : '⬆ إيداع') : '⬇ صرف'}</span>
+                                                    </td>
+                                                    <td data-label="القناة">
+                                                        <span className="txn-channel-badge">{CHANNEL_ICONS[txn.channel] || ''} {CHANNEL_LABEL[txn.channel] || txn.channel}</span>
+                                                        {txn.refNumber && <div className="txn-ref-txt">({txn.refNumber})</div>}
+                                                    </td>
+                                                    <td data-label="البيان" className="txn-desc-cell">{txn.description}</td>
+                                                    <td data-label="القيمة" className="txn-amount-td">
+                                                        <span className={`txn-amount-val ${isIn ? 'positive' : 'negative'}`}>
+                                                            {isIn ? '+' : '-'}{Number(txn.amount).toLocaleString('en-US')}
+                                                        </span>
+                                                    </td>
+                                                    {isAdmin && (
+                                                        <td data-label="إجراءات" className="txn-actions-td">
+                                                            <button onClick={() => handleDelete(txn.id)} className="btn-modern btn-danger btn-sm trash-btn" title="حذف">🗑️</button>
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            );
+                                        })}
+                                        {filteredTxns.length === 0 && (
+                                            <tr><td colSpan={isAdmin ? 7 : 6} className="empty-results-cell">
+                                                {allTxns.length === 0 ? 'لا توجد حركات مسجلة.' : 'لا توجد حركات تطابق معايير الفلترة.'}
+                                            </td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                                <div className="pagination-controls-treasury">
+                                    <div className="results-count-selector">
+                                        <span className="page-size-label">عدد النتائج:</span>
+                                        <select
+                                            value={pageSize}
+                                            onChange={(e) => handlePageSizeChange(e.target.value)}
+                                            className="page-size-dropdown"
+                                            aria-label="Items per page"
+                                        >
+                                            <option value={5}>5</option>
+                                            <option value={15}>15</option>
+                                            <option value={30}>30</option>
+                                            <option value={50}>50</option>
+                                            <option value="ALL">الكل</option>
+                                        </select>
+                                    </div>
+
+                                    {totalPages > 1 && (
+                                        <div className="page-nav-wrapper">
+                                            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn-modern btn-secondary nav-btn">&rarr; السابق</button>
+                                            <div className="page-indicator">
+                                                {currentPage} / {totalPages}
+                                            </div>
+                                            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="btn-modern btn-secondary nav-btn">التالي &larr;</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
-            {/* --- Manage Channels Modal --- */}
+            ) : (
+                <ExpensesView sym={sym} isAdmin={isAdmin} />
+            )}
+
             {showManageChannels && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-                    <div className="glass-panel" style={{ width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px' }}>
-                            <h2 style={{ margin: 0, color: '#f59e0b' }}>⚙️ إدارة قنوات وحسابات الخزينة</h2>
-                            <button onClick={() => setShowManageChannels(false)} style={{ background: 'transparent', border: 'none', color: '#ff5252', fontSize: '1.5rem', cursor: 'pointer' }}>✕</button>
+                <div className="confirm-overlay animate-fade-in modal-overlay-shell" onClick={() => setShowManageChannels(false)}>
+                    <div className="glass-panel confirm-modal modal-content-shell" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header-shell">
+                            <h2 className="modal-title-shell">⚙️ إدارة قنوات وحسابات الخزينة</h2>
+                            <button onClick={() => setShowManageChannels(false)} className="modal-close-btn">✕</button>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '10px', marginBottom: '2rem', alignItems: 'end', background: 'rgba(255,255,255,0.03)', padding: '15px', borderRadius: '12px' }}>
-                            <div>
-                                <label htmlFor="ch_code" style={{ fontSize: '0.8rem' }}>كود القناة (English)</label>
-                                <input id="ch_code" type="text" className="input-glass" placeholder="مثلاً: OFFICE_SAFE" value={channelForm.type} onChange={e => setChannelForm({ ...channelForm, type: e.target.value.toUpperCase().replace(/\s/g, '_') })} />
+                        <div className="bank-search-wrapper">
+                            <label className="field-hint-mini">البنك أو المحفظة الذكية (اختياري)</label>
+                            <div className="bank-input-group">
+                                {channelForm.logoPath && <img src={channelForm.logoPath} alt="Logo" className="bank-logo-mini" onError={(e) => e.currentTarget.style.display = 'none'} />}
+                                <input
+                                    type="text"
+                                    className="input-glass bank-search-input"
+                                    placeholder="ابحث عن البنك أو المحفظة..."
+                                    value={bankSearch}
+                                    onChange={e => { setBankSearch(e.target.value); setIsDropdownOpen(true); }}
+                                    onFocus={() => setIsDropdownOpen(true)}
+                                    // small delay to allow click on dropdown items
+                                    onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                                />
+                                <span className="bank-dropdown-trigger" onClick={() => setIsDropdownOpen(!isDropdownOpen)}>▼</span>
                             </div>
-                            <div>
-                                <label htmlFor="ch_name" style={{ fontSize: '0.8rem' }}>اسم العرض (عربي)</label>
-                                <input id="ch_name" type="text" className="input-glass" placeholder="مثلاً: خزينة المكتب" value={channelForm.name} onChange={e => setChannelForm({ ...channelForm, name: e.target.value })} />
+
+                            {isDropdownOpen && (
+                                <div className="banks-dropdown-menu">
+                                    {banksData.filter(b => b.name.toLowerCase().includes(bankSearch.toLowerCase()) || b.defaultCode.toLowerCase().includes(bankSearch.toLowerCase())).map(bank => (
+                                        <div key={bank.id} className="bank-option" onClick={() => handleSelectBank(bank)}>
+                                            {bank.logoPath ? <img src={bank.logoPath} alt={bank.name} className="bank-opt-logo" onError={(e) => e.currentTarget.style.display = 'none'} /> : <div className="bank-opt-placeholder">🏦</div>}
+                                            <div className="bank-info-group">
+                                                <div className="bank-opt-name">{bank.name}</div>
+                                                <div className="bank-type-label">{bank.type === 'BANK' ? 'بنك' : bank.type === 'WALLET' ? 'محفظة' : 'مخصص'}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="channel-entry-grid">
+                            <div className="entry-field">
+                                <label className="field-hint-mini">كود القناة</label>
+                                <input type="text" className="input-glass" placeholder="OFFICE_SAFE" value={channelForm.type} onChange={e => setChannelForm({ ...channelForm, type: e.target.value.toUpperCase().replace(/\s/g, '_') })} />
                             </div>
-                            <div>
-                                <label htmlFor="ch_clr" style={{ fontSize: '0.8rem' }}>اللون</label>
-                                <input id="ch_clr" type="color" className="input-glass" style={{ padding: '0', height: '42px' }} value={channelForm.color} onChange={e => setChannelForm({ ...channelForm, color: e.target.value })} />
+                            <div className="entry-field">
+                                <label className="field-hint-mini">اسم العرض</label>
+                                <input type="text" className="input-glass" placeholder="خزينة المكتب" value={channelForm.name} onChange={e => setChannelForm({ ...channelForm, name: e.target.value })} />
                             </div>
-                            <button className="btn-primary" onClick={handleSaveChannel} disabled={isSavingChannel}>
+                            <div className="entry-field">
+                                <label className="field-hint-mini">اللون</label>
+                                <input type="color" className="input-glass color-picker-input" value={channelForm.color} onChange={e => setChannelForm({ ...channelForm, color: e.target.value })} />
+                            </div>
+                            <button className="btn-modern btn-primary save-channel-btn" onClick={handleSaveChannel} disabled={isSavingChannel}>
                                 {isSavingChannel ? '...' : '➕ حفظ'}
                             </button>
                         </div>
 
-                        <h3 style={{ fontSize: '1rem', marginBottom: '1rem' }}>القنوات الحالية:</h3>
-                        <div style={{ display: 'grid', gap: '10px' }}>
+                        <h3 className="settings-section-label">القنوات الحالية</h3>
+                        <div className="channels-list-grid">
                             {treasuries.map(tr => (
-                                <div key={tr.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '10px 15px', borderRadius: '10px', borderLeft: `5px solid ${tr.color || '#fff'}` }}>
-                                    <div>
-                                        <div style={{ fontWeight: 'bold' }}>{tr.name || tr.type}</div>
-                                        <div style={{ fontSize: '0.75rem', color: '#888' }}>Code: {tr.type} | الرصيد: {tr.balance.toLocaleString()} ج.م</div>
+                                <div key={tr.id} className="glass-panel channel-item-card" style={tr.logoPath ? {} : { borderLeft: `5px solid ${tr.color || '#fff'}` }}>
+                                    <div className="channel-item-info">
+                                        {tr.logoPath && (
+                                            <div className="channel-logo-boxed">
+                                                <img src={tr.logoPath} alt="Logo" className="channel-logo-img" onError={(e) => e.currentTarget.style.display = 'none'} />
+                                            </div>
+                                        )}
+                                        <div>
+                                            <div className="channel-item-name">{tr.name || tr.type}</div>
+                                            <div className="channel-item-meta">{tr.type} | الرصيد: {tr.balance.toLocaleString('en-US')} {sym}</div>
+                                        </div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '10px' }}>
-                                        <button onClick={() => setChannelForm({ type: tr.type, name: tr.name || tr.type, color: tr.color || '#29b6f6' })} style={{ background: 'transparent', border: '1px solid #ffa726', color: '#ffa726', padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>تعديل</button>
-                                        <button onClick={() => handleDeleteChannel(tr.id)} style={{ background: 'transparent', border: '1px solid #ff5252', color: '#ff5252', padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>حذف</button>
+                                    <div className="channel-item-actions">
+                                        <button onClick={() => {
+                                            setChannelForm({ type: tr.type, name: tr.name || tr.type, color: tr.color || '#29b6f6', bankId: tr.bankId || '', logoPath: tr.logoPath || '' });
+                                            const bk = banksData.find(b => b.id === tr.bankId);
+                                            setBankSearch(bk ? bk.name : '');
+                                        }} className="btn-modern btn-secondary btn-sm edit-channel-btn">✏️</button>
+                                        <button onClick={() => handleDeleteChannel(tr.id)} className="btn-modern btn-danger btn-sm">🗑️</button>
                                     </div>
                                 </div>
                             ))}
@@ -546,6 +682,524 @@ export default function TreasuryPage() {
                     </div>
                 </div>
             )}
+
+            <style jsx>{`
+                .treasury-status-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                    gap: 15px;
+                    margin-bottom: 1.5rem;
+                }
+                .balance-card {
+                    text-align: center;
+                    padding: 1.25rem;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    transition: transform 0.3s;
+                }
+                .balance-card:hover {
+                    transform: translateY(-5px);
+                }
+                .card-label {
+                    color: var(--text-muted);
+                    margin-bottom: 0;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                }
+                .card-amount {
+                    font-size: 1.6rem;
+                    font-weight: 800;
+                }
+                .card-currency {
+                    font-size: 0.8rem;
+                    opacity: 0.7;
+                }
+                .tabs-nav-treasury {
+                    display: flex;
+                    gap: 8px;
+                    margin-bottom: 1.5rem;
+                }
+                .tab-btn {
+                    padding: 10px 24px;
+                    border-radius: 10px;
+                    font-size: 0.9rem;
+                    font-weight: 700;
+                }
+                .expenses-btn.active {
+                    background: #E35E35;
+                    border-color: rgba(227,94,53,0.3);
+                    color: #fff;
+                }
+                .reports-grid-treasury {
+                    display: grid;
+                    grid-template-columns: 320px 1fr;
+                    gap: 20px;
+                    align-items: start;
+                }
+                .form-sticky {
+                    align-self: start;
+                    width: 100%;
+                    position: sticky;
+                    top: 24px;
+                }
+                .txn-form-title {
+                    margin-bottom: 1.25rem;
+                }
+                .txn-success-badge {
+                    margin-bottom: 1rem;
+                    display: block;
+                    text-align: center;
+                }
+                .txn-fields-wrapper {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 15px;
+                }
+                .channel-details-box {
+                    padding: 10px;
+                    background: rgba(255,255,255,0.05);
+                    border-radius: 8px;
+                }
+                .channel-ref-label {
+                    color: #29b6f6;
+                    font-size: 0.85rem;
+                    display: block;
+                    margin-bottom: 4px;
+                }
+                .btn-submit-txn {
+                    margin-top: 0.5rem;
+                    padding: 12px;
+                }
+                .in-txn {
+                    background: #66bb6a;
+                    border-color: rgba(102,187,106,0.3);
+                }
+                .out-txn {
+                    background: #E35E35;
+                    border-color: rgba(227,94,53,0.3);
+                }
+                .results-view-panel {
+                    min-width: 0;
+                }
+                .txn-list-header-wrapper {
+                    margin-bottom: 1.25rem;
+                }
+                .txn-list-title-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 12px;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                }
+                .txn-list-title {
+                    margin: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+                .active-filter-txt {
+                    font-size: 0.78rem;
+                    color: #ffa726;
+                }
+                .clear-filter-btn {
+                    padding: 4px 12px;
+                    background: rgba(255,82,82,0.1);
+                    border: 1px solid #ff5252;
+                    color: #ff5252;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 0.8rem;
+                    font-family: inherit;
+                }
+                .filter-pills-bar {
+                    display: flex;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    padding: 12px;
+                    background: rgba(255,255,255,0.03);
+                    border-radius: 10px;
+                    border: 1px solid rgba(255,255,255,0.08);
+                }
+                .filter-pill {
+                    padding: 5px 12px;
+                    border-radius: 20px;
+                    cursor: pointer;
+                    font-family: inherit;
+                    font-size: 0.81rem;
+                    background: transparent;
+                    color: #aaa;
+                    border: 1px solid rgba(255,255,255,0.15);
+                    transition: all 0.2s;
+                }
+                .filter-pill.active {
+                    color: #fff;
+                    border-color: transparent;
+                    font-weight: 700;
+                }
+                .in-pill { background: #66bb6a; }
+                .out-pill { background: #E35E35; }
+                .primary-pill { background: var(--primary-color); }
+                .filter-divider {
+                    width: 1px;
+                    height: 24px;
+                    background: rgba(255,255,255,0.1);
+                }
+                .filter-select, .filter-input, .filter-date {
+                    background: #1a1c22;
+                    border: 1px solid rgba(255,255,255,0.15);
+                    borderRadius: 8px;
+                    color: #ddd;
+                    padding: 5px 10px;
+                    font-family: inherit;
+                    font-size: 0.81rem;
+                    cursor: pointer;
+                    outline: none;
+                }
+                .search-input {
+                    min-width: 130px;
+                    flex: 1;
+                }
+                .date-separator {
+                    color: #666;
+                    font-size: 0.8rem;
+                }
+                .filter-summary-row {
+                    display: flex;
+                    gap: 16px;
+                    marginTop: 10px;
+                    flex-wrap: wrap;
+                    align-items: center;
+                }
+                .results-count-txt {
+                    font-size: 0.83rem;
+                    color: var(--text-muted);
+                }
+                .summary-badge {
+                    font-size: 0.75rem;
+                }
+                .net-change-val {
+                    font-size: 0.83rem;
+                    fontWeight: 800;
+                }
+                .net-change-val.positive { color: #66bb6a; }
+                .net-change-val.negative { color: #ff5252; }
+                
+                .table-wrapper-treasury {
+                    max-height: 500px;
+                }
+                .txn-row-collection {
+                    background: rgba(41,182,246,0.04) !important;
+                }
+                .txn-datetime {
+                    font-size: 0.82rem;
+                }
+                .txn-time {
+                    font-size: 0.7rem;
+                    color: #666;
+                }
+                .txn-treasury-btn {
+                    font-size: 0.82rem;
+                    font-weight: 600;
+                }
+                .txn-type-badge {
+                    padding: 3px 8px;
+                    border-radius: 6px;
+                    font-size: 0.8rem;
+                    font-weight: bold;
+                }
+                .txn-type-badge.in {
+                    background: rgba(102,187,106,0.15);
+                    color: #66bb6a;
+                }
+                .txn-type-badge.out {
+                    background: rgba(227,94,53,0.15);
+                    color: #E35E35;
+                }
+                .txn-channel-badge {
+                    font-size: 0.82rem;
+                }
+                .txn-ref-txt {
+                    font-size: 0.75rem;
+                    color: #888;
+                }
+                .txn-desc-cell {
+                    font-size: 0.82rem;
+                    max-width: 200px;
+                }
+                .txn-amount-td {
+                    text-align: center;
+                }
+                .txn-amount-val {
+                    font-weight: 800;
+                    font-size: 1.05rem;
+                }
+                .txn-amount-val.positive { color: #66bb6a; }
+                .txn-amount-val.negative { color: #ff5252; }
+                .trash-btn {
+                    padding: 4px 8px;
+                }
+                .empty-results-cell {
+                    text-align: center;
+                    padding: 2rem;
+                    color: #555;
+                }
+                .pagination-controls-treasury {
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    marginTop: 2rem;
+                    flex-wrap: wrap-reverse;
+                    gap: 20px;
+                    padding: 15px;
+                    background: rgba(255,255,255,0.02);
+                    border-radius: 16px;
+                    border: 1px solid var(--border-color);
+                }
+                .results-count-selector {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: rgba(0,0,0,0.2);
+                    padding: 5px 15px;
+                    border-radius: 20px;
+                }
+                .page-size-label {
+                    color: var(--text-muted);
+                    font-size: 0.85rem;
+                }
+                .page-size-dropdown {
+                    padding: 0px;
+                    font-size: 0.9rem;
+                    width: auto;
+                    border: none;
+                    background: transparent;
+                    color: var(--primary-color);
+                    font-weight: bold;
+                    cursor: pointer;
+                    outline: none;
+                }
+                .page-size-dropdown option { color: #000; }
+                .page-nav-wrapper {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 15px;
+                    flex: 1 1 auto;
+                    max-width: 350px;
+                }
+                .nav-btn {
+                    flex: 1;
+                    justify-content: center;
+                    padding: 8px 15px;
+                }
+                .page-indicator {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    minWidth: 60px;
+                    background: rgba(227,94,53,0.1);
+                    color: var(--primary-color);
+                    border-radius: 10px;
+                    padding: 6px 12px;
+                    font-weight: bold;
+                    font-size: 0.9rem;
+                    direction: ltr;
+                    white-space: nowrap;
+                    border: 1px solid rgba(227,94,53,0.2);
+                }
+                /* Modal Styles */
+                .modal-content-shell {
+                    width: 100%;
+                    max-width: 700px;
+                    padding: 2rem;
+                }
+                .modal-header-shell {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 1.5rem;
+                }
+                .modal-title-shell {
+                    margin: 0;
+                    color: #f59e0b;
+                    font-size: 1.25rem;
+                }
+                .modal-close-btn {
+                    background: transparent;
+                    border: none;
+                    color: #888;
+                    font-size: 1.5rem;
+                    cursor: pointer;
+                }
+                .bank-search-wrapper {
+                    position: relative;
+                    margin-bottom: 1.5rem;
+                }
+                .field-hint-mini {
+                    font-size: 0.8rem;
+                    color: #aaa;
+                    display: block;
+                    margin-bottom: 4px;
+                }
+                .bank-input-group {
+                    display: flex;
+                    align-items: center;
+                    background: #1a1c22;
+                    border-radius: 8px;
+                    border: 1px solid rgba(255,255,255,0.1);
+                    overflow: hidden;
+                }
+                .bank-logo-mini {
+                    width: 24px;
+                    height: 24px;
+                    margin: 0 10px;
+                    object-fit: contain;
+                }
+                .bank-search-input {
+                    width: 100%;
+                    border: none;
+                    background: transparent;
+                }
+                .bank-dropdown-trigger {
+                    padding: 0 10px;
+                    color: #888;
+                    cursor: pointer;
+                }
+                .banks-dropdown-menu {
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    background: #1e2128;
+                    border: 1px solid rgba(255,255,255,0.2);
+                    border-radius: 8px;
+                    margin-top: 5px;
+                    max-height: 200px;
+                    overflow-y: auto;
+                    z-index: 10;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+                }
+                .bank-option {
+                    padding: 10px;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    cursor: pointer;
+                    border-bottom: 1px solid rgba(255,255,255,0.05);
+                    transition: background 0.2s;
+                }
+                .bank-option:hover {
+                    background: rgba(255,255,255,0.05);
+                }
+                .bank-opt-logo {
+                    width: 24px;
+                    height: 24px;
+                    object-fit: contain;
+                }
+                .bank-opt-placeholder {
+                    width: 24px;
+                    height: 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1.2rem;
+                }
+                .bank-opt-name {
+                    color: #fff;
+                    font-size: 0.9rem;
+                }
+                .bank-type-label {
+                    color: #888;
+                    font-size: 0.75rem;
+                }
+                .channel-entry-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr 80px auto;
+                    gap: 10px;
+                    margin-bottom: 2rem;
+                    align-items: end;
+                    background: rgba(255,255,255,0.03);
+                    padding: 15px;
+                    border-radius: 12px;
+                }
+                .color-picker-input {
+                    padding: 0;
+                    height: 42px;
+                    cursor: pointer;
+                }
+                .save-channel-btn {
+                    height: 42px;
+                    padding: 0 20px;
+                }
+                .channels-list-grid {
+                    display: grid;
+                    gap: 10px;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    padding-right: 5px;
+                }
+                .channel-item-card {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 12px 15px;
+                    background: rgba(255,255,255,0.02);
+                }
+                .channel-item-info {
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                }
+                .channel-logo-boxed {
+                    background: #fff;
+                    padding: 5px;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .channel-logo-img {
+                    width: 30px;
+                    height: 30px;
+                    object-fit: contain;
+                }
+                .channel-item-name {
+                    font-weight: 700;
+                    color: #fff;
+                }
+                .channel-item-meta {
+                    font-size: 0.75rem;
+                    color: var(--text-muted);
+                }
+                .channel-item-actions {
+                    display: flex;
+                    gap: 8px;
+                }
+                .edit-channel-btn {
+                    color: #ffa726;
+                    border-color: rgba(255,167,38,0.2);
+                }
+                @media (max-width: 992px) {
+                    .reports-grid-treasury {
+                        grid-template-columns: 1fr;
+                    }
+                    .form-sticky {
+                        position: relative;
+                        top: 0;
+                    }
+                }
+                @media (max-width: 600px) {
+                    .channel-entry-grid {
+                        grid-template-columns: 1fr;
+                    }
+                    .save-channel-btn {
+                        width: 100%;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

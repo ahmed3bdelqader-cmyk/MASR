@@ -1,4 +1,6 @@
 import "./globals.css";
+import "./responsive-core.css";
+import "./print.css";
 import React from 'react';
 import Sidebar from '@/components/Sidebar';
 import SettingsApplier from '@/components/SettingsApplier';
@@ -10,10 +12,13 @@ export const metadata = {
   description: "Modern Metal Furniture Manufacturing ERP System",
 };
 
-export const viewport = {
+import { Viewport } from 'next';
+
+export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
   themeColor: '#E35E35',
 };
 

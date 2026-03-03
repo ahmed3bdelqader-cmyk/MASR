@@ -1,36 +1,313 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🏭 STAND-EG — نظام الإدارة المتكامل
 
-## Getting Started
+<div dir="rtl">
 
-First, run the development server:
+> نظام إدارة متكامل مبني على Next.js 14 — يغطي المشتريات، المخزن، التصنيع، المبيعات، الموارد البشرية، والخزينة المالية.
+
+---
+
+## 📋 جدول المحتويات
+
+- [متطلبات التشغيل](#متطلبات-التشغيل)
+- [التثبيت من الصفر](#التثبيت-من-الصفر)
+- [إعداد قاعدة البيانات](#إعداد-قاعدة-البيانات)
+- [هيكلة المجلدات](#هيكلة-المجلدات)
+- [المكتبات الأساسية](#المكتبات-الأساسية)
+- [وصف وحدات النظام](#وصف-وحدات-النظام)
+- [أوامر مفيدة](#أوامر-مفيدة)
+- [النشر على Hostinger](#النشر-على-hostinger)
+
+---
+
+## ⚙️ متطلبات التشغيل
+
+| المتطلب | الإصدار المطلوب |
+|---------|-----------------|
+| Node.js | `>= 20.x` |
+| npm     | `>= 9.x` |
+| MySQL   | `>= 8.0` |
+
+---
+
+## 🚀 التثبيت من الصفر
+
+### 1. استنساخ المشروع أو فك الضغط
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# إذا كان لديك الكود كملف ZIP، افككه في مجلد
+# ثم انتقل إلى مجلد المشروع
+cd STAND-EG
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. إعداد المتغيرات البيئية
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# انسخ ملف المثال
+copy .env.example .env
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# ثم افتح .env وعدّل القيم:
+# DATABASE_URL="mysql://user:password@host:3306/dbname"
+# GOOGLE_GENERATIVE_AI_API_KEY="your-gemini-key"
+# ENCRYPTION_SECRET="your-32-char-secret"
+```
 
-## Learn More
+### 3. تثبيت المكتبات
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm install
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 4. توليد Prisma Client وإنشاء الجداول
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# توليد الـ Client من الـ Schema
+npx prisma generate
 
-## Deploy on Vercel
+# دفع الـ Schema لقاعدة البيانات (للبيئة التطويرية)
+npx prisma db push
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# أو عبر Migrations (للإنتاج)
+npx prisma migrate deploy
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 5. تشغيل بيانات أولية (اختياري)
+
+```bash
+# لإنشاء بيانات تجريبية
+node seed.js
+```
+
+### 6. تشغيل النظام
+
+```bash
+# وضع التطوير (Development)
+npm run dev
+
+# وضع الإنتاج (Production)
+npm run build
+node server.js
+```
+
+---
+
+## 🗄️ إعداد قاعدة البيانات
+
+### على Hostinger / cPanel
+
+1. أنشئ قاعدة بيانات MySQL جديدة من لوحة التحكم
+2. أنشئ مستخدمًا وامنحه كل الصلاحيات
+3. أضف رابط الاتصال في ملف `.env`:
+   ```
+   DATABASE_URL="mysql://username:password@193.203.168.39:3306/dbname"
+   ```
+
+### استعادة من نسخة احتياطية
+
+```bash
+# استيراد ملف SQL في قاعدة البيانات
+mysql -u username -p database_name < StandMasr_Backup_2026-02-24.sql
+```
+
+---
+
+## 📁 هيكلة المجلدات
+
+```
+STAND-EG/
+│
+├── prisma/
+│   └── schema.prisma         # تعريف قاعدة البيانات (المصدر الوحيد للحقيقة)
+│
+├── src/
+│   ├── app/                  # Next.js App Router
+│   │   │
+│   │   ├── page.tsx          # الصفحة الرئيسية (Dashboard)
+│   │   ├── layout.tsx        # التخطيط العام للتطبيق
+│   │   ├── globals.css       # الأنماط العامة
+│   │   │
+│   │   ├── clients/          # 👤 صفحة إدارة العملاء
+│   │   ├── suppliers/        # 🏢 صفحة الموردين
+│   │   ├── employees/        # 👥 صفحة الموارد البشرية
+│   │   ├── purchases/        # 🛒 صفحة فواتير المشتريات
+│   │   ├── inventory/        # 📦 صفحة المخزن الذكي
+│   │   ├── products/         # 🏷️ صفحة كتالوج المنتجات
+│   │   ├── sales/            # 💰 صفحة المبيعات والفواتير
+│   │   ├── jobs/             # 🔧 صفحة أوامر التصنيع (الشغلانات)
+│   │   ├── paint/            # 🎨 صفحة قسم الدهانات
+│   │   ├── treasury/         # 🏦 صفحة الخزينة والمصروفات
+│   │   ├── reports/          # 📊 صفحة التقارير
+│   │   ├── settings/         # ⚙️ صفحة الإعدادات
+│   │   ├── smart-entry/      # 🤖 الإدخال الذكي بالذكاء الاصطناعي
+│   │   ├── login/            # 🔐 صفحة تسجيل الدخول
+│   │   ├── permissions/      # 🛡️ لوحة إدارة الصلاحيات
+│   │   ├── database/         # 🗄️ أدوات إدارة قاعدة البيانات
+│   │   └── seals/            # 🔏 صفحة ختم الوثائق
+│   │
+│   │   └── api/              # نقاط نهاية الـ API (Next.js Route Handlers)
+│   │       ├── auth/         # 🔐 تسجيل الدخول والخروج
+│   │       ├── clients/      # CRUD العملاء
+│   │       ├── suppliers/    # CRUD الموردين
+│   │       ├── employees/    # CRUD الموظفين
+│   │       ├── attendance/   # الحضور والانصراف
+│   │       ├── payroll/      # الرواتب والسلف
+│   │       ├── purchases/    # فواتير المشتريات + تحديث المخزن
+│   │       ├── inventory/    # المخزن الذكي
+│   │       ├── products/     # كتالوج المنتجات
+│   │       ├── sales/        # فواتير المبيعات
+│   │       ├── jobs/         # أوامر التصنيع
+│   │       │   └── paint/    # بنود الدهانات
+│   │       ├── paint/        # قسم الدهانات المستقل
+│   │       ├── expenses/     # المصروفات
+│   │       ├── treasury/     # الخزينة
+│   │       ├── categories/   # الفئات الرئيسية للمخزن
+│   │       ├── smart-entry/  # الإدخال الذكي (AI)
+│   │       │   ├── analyze/  # تحليل الصور بالـ AI
+│   │       │   └── process/  # حفظ البيانات المحللة
+│   │       ├── settings/     # إعدادات النظام
+│   │       ├── logs/         # سجلات الأخطاء
+│   │       ├── maintenance/  # صيانة وإدارة قاعدة البيانات
+│   │       └── whatsapp-templates/ # قوالب رسائل الواتساب
+│   │
+│   ├── components/           # مكونات React المشتركة
+│   │   ├── AppShell.tsx      # الهيكل الرئيسي للتطبيق
+│   │   ├── Sidebar.tsx       # القائمة الجانبية
+│   │   ├── AuthGuard.tsx     # حماية الصفحات بتسجيل الدخول
+│   │   ├── ErrorBoundary.tsx # معالج أخطاء React
+│   │   ├── ExpensesView.tsx  # لوحة المصروفات
+│   │   └── ...               # مكونات أخرى
+│   │
+│   └── lib/                  # المكتبات المساعدة
+│       ├── prisma.ts         # اتصال Prisma (Singleton)
+│       ├── logger.ts         # تسجيل الأخطاء في قاعدة البيانات
+│       ├── encryption.ts     # تشفير وفك تشفير البيانات
+│       ├── banksData.ts      # بيانات البنوك المصرية
+│       └── reportTemplate.ts # قوالب التقارير
+│
+├── public/                   # الملفات الثابتة (صور، أيقونات)
+├── server.js                 # نقطة دخول الـ Production Server
+├── next.config.js            # إعدادات Next.js
+├── package.json              # المكتبات والأوامر
+├── tsconfig.json             # إعدادات TypeScript
+├── .env                      # متغيرات البيئة (لا تُرفع على Git)
+└── .env.example              # نموذج متغيرات البيئة (يُرفع على Git)
+```
+
+---
+
+## 📚 المكتبات الأساسية
+
+### Dependencies (مكتبات الإنتاج)
+
+| المكتبة | الإصدار | الغرض |
+|---------|---------|--------|
+| `next` | `14.2.0` | إطار العمل الأساسي (Full-Stack React) |
+| `react` | `18.2.0` | مكتبة واجهة المستخدم |
+| `react-dom` | `18.2.0` | تصيير React في المتصفح |
+| `prisma` | `5.22.0` | ORM — إدارة قاعدة البيانات |
+| `@prisma/client` | `5.22.0` | عميل Prisma لتنفيذ الاستعلامات |
+| `mysql2` | `^3.18.0` | تشغيل قاعدة بيانات MySQL |
+| `@google/genai` | `^1.42.0` | Google Gemini AI (الإدخال الذكي) |
+| `bcryptjs` | `^3.0.3` | تشفير كلمات المرور |
+| `lucide-react` | `^0.575.0` | مكتبة الأيقونات |
+| `xlsx` | `^0.18.5` | تصدير التقارير لـ Excel |
+| `multer` | `^2.0.2` | رفع الملفات |
+| `mysqldump` | `^3.2.0` | النسخ الاحتياطي لقاعدة البيانات |
+
+### DevDependencies (مكتبات التطوير)
+
+| المكتبة | الإصدار | الغرض |
+|---------|---------|--------|
+| `typescript` | `^5` | TypeScript |
+| `tailwindcss` | `^4.2.1` | إطار CSS للتصميم |
+| `eslint` | `^8` | جودة الكود |
+| `tsx` | `^4.21.0` | تشغيل TypeScript مباشرة |
+| `puppeteer` | `^24.37.5` | طباعة PDF |
+
+---
+
+## 🏗️ وصف وحدات النظام
+
+| الوحدة | الوصف |
+|--------|-------|
+| **Dashboard** | لوحة تحكم رئيسية تعرض ملخصًا مالياً وإجمالي المبيعات والمخزن |
+| **العملاء** | إدارة بيانات العملاء — إنشاء، بحث، جدول حسابات |
+| **الموردون** | إدارة موردي الخامات والدهانات — تتبع الأرصدة |
+| **الموارد البشرية** | ملفات الموظفين، الحضور، الرواتب، السلف، والجزاءات |
+| **المشتريات** | فواتير الخامات من الموردين + تحديث تلقائي للمخزن |
+| **المخزن الذكي** | تتبع كميات الخامات والمنتجات النهائية |
+| **المنتجات** | كتالوج المنتجات الجاهزة للبيع |
+| **المبيعات** | فواتير البيع للعملاء + تتبع التحصيل |
+| **أوامر التصنيع** | الشغلانات — تحويل الخامات لمنتجات نهائية |
+| **الدهانات** | إدارة تكاليف الدهانات الخارجية + ربطها بالخزينة |
+| **الخزينة** | تتبع الأرصدة والحركات المالية لكل خزينة/بنك |
+| **التقارير** | تقارير مالية وإدارية قابلة للطباعة |
+| **الإدخال الذكي** | رفع صور الفواتير وتحليلها تلقائياً بالذكاء الاصطناعي |
+| **الإعدادات** | بادئات الفواتير، إعدادات العرض، قوالب الواتساب |
+
+---
+
+## 💡 أوامر مفيدة
+
+```bash
+# تشغيل الـ Prisma Studio (واجهة مرئية لقاعدة البيانات)
+npx prisma studio
+
+# عرض الـ Schema بصرياً
+npx prisma format
+
+# إعادة توليد Prisma Client بعد تعديل Schema
+npx prisma generate
+
+# نسخ احتياطي لقاعدة البيانات
+node -e "require('./scripts/backup.js')"
+
+# بناء المشروع للإنتاج
+npm run build
+
+# فحص الأخطاء
+npm run lint
+```
+
+---
+
+## 🌐 النشر على Hostinger
+
+1. **ارفع** الملفات (بدون `node_modules` و `.next`)
+2. **أعدّ** المتغيرات البيئية في لوحة التحكم
+3. **شغّل** هذه الأوامر على السيرفر:
+   ```bash
+   npm install --production
+   npx prisma generate
+   npx prisma migrate deploy
+   npm run build
+   node server.js
+   ```
+4. **أعدّ** PM2 للإبقاء على النظام شغّالاً:
+   ```bash
+   pm2 start server.js --name "stand-eg"
+   pm2 save
+   pm2 startup
+   ```
+
+---
+
+## 🔐 أدوار المستخدمين
+
+| الدور | الصلاحيات |
+|-------|-----------|
+| `ADMIN` | وصول كامل لجميع الوحدات |
+| `ACCOUNTANT` | الخزينة، المصروفات، التقارير المالية |
+| `INVENTORY` | المخزن، المشتريات، الموردون |
+| `SALES` | العملاء، المبيعات، الفواتير |
+| `WORKER` | عرض محدود + الحضور والانصراف |
+
+---
+
+## 📞 الدعم الفني
+
+للاستفسارات التقنية، يرجى الرجوع إلى:
+- ملف `docs/BUSINESS_LOGIC.md` — شرح المنطق التجاري
+- ملف `prisma/schema.prisma` — تعريف قاعدة البيانات
+- لوحة الـ SystemLog في قسم الإعدادات — لمتابعة الأخطاء
+
+</div>

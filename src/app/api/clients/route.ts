@@ -7,6 +7,7 @@ export async function GET() {
         const clients = await prisma.client.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
+                phones: true,
                 invoices: {
                     select: { id: true, total: true, status: true, invoiceNo: true, date: true }
                 },
@@ -56,9 +57,15 @@ export async function POST(req: Request) {
                         name: item.name,
                         storeName: item.storeName || null,
                         address: item.address || null,
-                        phone1: item.phone1 || null,
-                        phone2: item.phone2 || null,
                         email: item.email || null,
+                        phones: {
+                            create: (item.phones || []).length > 0
+                                ? item.phones.map((p: any) => ({
+                                    phone: p.phone,
+                                    isPrimaryWhatsApp: !!p.isPrimaryWhatsApp
+                                }))
+                                : []
+                        }
                     }
                 });
                 created.push(client);
@@ -66,15 +73,23 @@ export async function POST(req: Request) {
             return NextResponse.json(created, { status: 201 });
         } else {
             // Single create
+            if (!body.phones || body.phones.length === 0 || !body.phones.some((p: any) => p.isPrimaryWhatsApp)) {
+                return NextResponse.json({ error: 'يجب إضافة رقم هاتف واحد على الأقل وتحديده كواتساب أساسي' }, { status: 400 });
+            }
+
             const client = await prisma.client.create({
                 data: {
                     serial: nextSerial,
                     name: body.name,
                     storeName: body.storeName || null,
                     address: body.address || null,
-                    phone1: body.phone1 || null,
-                    phone2: body.phone2 || null,
                     email: body.email || null,
+                    phones: {
+                        create: body.phones.map((p: any) => ({
+                            phone: p.phone,
+                            isPrimaryWhatsApp: !!p.isPrimaryWhatsApp
+                        }))
+                    }
                 }
             });
             return NextResponse.json(client, { status: 201 });
@@ -93,15 +108,24 @@ export async function PUT(req: Request) {
 
         if (!id) return NextResponse.json({ error: 'Client ID required' }, { status: 400 });
 
+        if (!body.phones || body.phones.length === 0 || !body.phones.some((p: any) => p.isPrimaryWhatsApp)) {
+            return NextResponse.json({ error: 'يجب إضافة رقم هاتف واحد على الأقل وتحديده كواتساب أساسي' }, { status: 400 });
+        }
+
         const client = await prisma.client.update({
             where: { id },
             data: {
                 name: data.name,
                 storeName: data.storeName || null,
                 address: data.address || null,
-                phone1: data.phone1 || null,
-                phone2: data.phone2 || null,
                 email: data.email || null,
+                phones: {
+                    deleteMany: {},
+                    create: data.phones.map((p: any) => ({
+                        phone: p.phone,
+                        isPrimaryWhatsApp: !!p.isPrimaryWhatsApp
+                    }))
+                }
             }
         });
 

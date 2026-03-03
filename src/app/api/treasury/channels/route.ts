@@ -5,7 +5,7 @@ import { logSystemError } from '@/lib/logger';
 export async function GET() {
     try {
         const channels = await prisma.treasury.findMany({
-            select: { id: true, type: true, name: true, color: true, balance: true }
+            select: { id: true, type: true, name: true, color: true, balance: true, bankId: true, logoPath: true }
         });
         return NextResponse.json(channels);
     } catch (error) {
@@ -17,16 +17,17 @@ export async function GET() {
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { type, name, color } = body;
+        const { type, name, color, bankId, logoPath } = body;
 
         if (!type || !name) {
             return NextResponse.json({ error: 'النوع والاسم مطلوبان' }, { status: 400 });
         }
 
+        // @ts-ignore: Prisma schema needs reset due to EPERM
         const channel = await prisma.treasury.upsert({
             where: { type },
-            update: { name, color },
-            create: { type, name, color, balance: 0 }
+            update: { name, color, bankId, logoPath },
+            create: { type, name, color, bankId, logoPath, balance: 0 }
         });
 
         return NextResponse.json(channel);

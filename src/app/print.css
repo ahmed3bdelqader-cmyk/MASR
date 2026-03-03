@@ -1,0 +1,218 @@
+/* Universal Print Styles */
+
+@media print {
+
+    /* Hide all non-print elements */
+    body>*:not(#__next),
+    /* Next.js root */
+    .sidebar-wrapper,
+    .mobile-menu-overlay,
+    .app-shell-header,
+    .page-header,
+    .header-actions,
+    .sidebar-toggle-btn,
+    .quick-action-btn,
+    .action-row,
+    .nav-tabs,
+    .btn-modern,
+    button:not(.allow-print),
+    input[type="file"],
+    .se-action-btn,
+    .glass-panel:not(.print-container) {
+        display: none !important;
+    }
+
+    /* Print Document Setup */
+    @page {
+        size: A4 portrait;
+        margin: 15mm;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        background: white !important;
+        color: black !important;
+    }
+
+    .main-content {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .content-centered-wrapper {
+        padding: 0 !important;
+        max-width: 100% !important;
+    }
+
+    /* Ensure parent containers don't clip the print root */
+    .app-container,
+    main {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+
+    #print-root {
+        display: block !important;
+        width: 100%;
+        background: white !important;
+        color: black !important;
+        position: relative;
+    }
+
+    .print-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 3px solid var(--accent, #E35E35);
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+    }
+
+    .print-company-info {
+        display: flex;
+        flex-direction: column;
+        text-align: right;
+    }
+
+    .print-company-info h1 {
+        margin: 0;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .print-company-info p {
+        margin: 5px 0 0 0;
+        color: #555 !important;
+        white-space: pre-wrap;
+    }
+
+    .print-logo {
+        max-height: 80px;
+        object-fit: contain;
+    }
+
+    .pl-left {
+        order: -1;
+    }
+
+    .print-document-title {
+        text-align: center;
+        font-size: 22px;
+        font-weight: bold;
+        margin: 20px 0;
+    }
+
+    /* Print Tables */
+    .print-table-wrapper {
+        width: 100%;
+        margin-bottom: 30px;
+    }
+
+    #print-root table {
+        width: 100% !important;
+        border-collapse: collapse;
+        color: black !important;
+        margin-bottom: 15px;
+    }
+
+    #print-root th {
+        background-color: var(--accent, #E35E35) !important;
+        color: white !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        padding: 8px 10px;
+        text-align: right;
+        font-size: 14px;
+        border: 1px solid #ddd;
+    }
+
+    #print-root td {
+        padding: 6px 10px;
+        border: 1px solid #ddd;
+        font-size: 13px;
+    }
+
+    #print-root tr {
+        page-break-inside: avoid;
+    }
+
+    #print-root tr:nth-child(even) td {
+        background-color: #f5f5f5 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Print Config Box (e.g., Client info) */
+    .print-meta-box {
+        background-color: #f9f9f9 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .print-meta-col {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .print-meta-col strong {
+        color: var(--accent, #E35E35) !important;
+    }
+
+    /* Footer */
+    .print-footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 2px solid var(--accent, #E35E35);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .print-seal {
+        position: absolute;
+        top: 10px;
+        opacity: 0.6;
+        z-index: -1;
+    }
+
+    .seal-left {
+        left: 20px;
+    }
+
+    .seal-right {
+        right: 20px;
+    }
+
+    .seal-center {
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    /* Utilities */
+    .text-center {
+        text-align: center !important;
+    }
+
+    .text-right {
+        text-align: right !important;
+    }
+
+    .text-left {
+        text-align: left !important;
+    }
+}
+
+@media screen {
+    #print-root {
+        display: none !important;
+    }
+}

@@ -5,7 +5,7 @@ import { logSystemError } from '@/lib/logger';
 export async function GET() {
     try {
         const invoices = await prisma.purchaseInvoice.findMany({
-            include: { items: true },
+            include: { items: true, supplierObj: { select: { name: true, phones: true } } },
             orderBy: { createdAt: 'desc' }
         });
         return NextResponse.json(invoices);
@@ -71,7 +71,8 @@ export async function POST(req: Request) {
             const invoice = await tx.purchaseInvoice.create({
                 data: {
                     invoiceNo: finalInvoiceNo,
-                    supplier: body.supplier || null,
+                    supplier: body.supplier || null, // Keep string for backwards compat if needed
+                    supplierId: body.supplierId || null,
                     totalAmount: calculatedTotal,
                     items: {
                         create: itemsToCreate
@@ -79,6 +80,14 @@ export async function POST(req: Request) {
                 },
                 include: { items: true }
             });
+
+            // Update Supplier Balance (increase balance owed to them)
+            if (body.supplierId) {
+                await tx.supplier.update({
+                    where: { id: body.supplierId },
+                    data: { balance: { increment: calculatedTotal } }
+                });
+            }
 
             // 2. Logistics Link: Automatically update the smart inventory
             for (const rawItem of body.items) {
@@ -97,6 +106,8 @@ export async function POST(req: Request) {
                         where: { id: existingInventory.id },
                         data: {
                             category: rawItem.inventoryCategory || existingInventory.category, // updating existing to be classified
+                            // @ts-ignore
+                            mainCategoryId: rawItem.mainCategoryId || (existingInventory as any).mainCategoryId,
                             stock: existingInventory.stock + (parseFloat(rawItem.quantity) || 0),
                             lastPurchasedPrice: inventoryUnitCost,       // ⭐ سعر القطعة – يُستخدم في التصنيع
                         }
@@ -107,6 +118,8 @@ export async function POST(req: Request) {
                         data: {
                             type: 'MATERIAL',
                             category: rawItem.inventoryCategory || rawItem.type,
+                            // @ts-ignore
+                            mainCategoryId: rawItem.mainCategoryId || null,
                             name: rawItem.name,
                             stock: parseFloat(rawItem.quantity) || 0,
                             unit,

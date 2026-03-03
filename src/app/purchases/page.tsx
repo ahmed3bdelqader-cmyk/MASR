@@ -2,27 +2,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────────────────────
-type MetalItem = {
-    category: 'METAL';
-    subtype: 'STAINLESS' | 'IRON';
-    shape: string; sectionSize: string; thickness: string;
-    quantityType: 'KG' | 'PIECE';
-    unitPrice: number; quantity: number;
-    piecesPerKg: number;   // كام قطعة في الكيلو (لو الشراء بالكيلو)
-    lengthPerPiece: number; // طول القطعة/الماسورة بالمتر (لو الشراء بالقطعة)
-};
-type WorkshopItem = {
-    category: 'WORKSHOP';
-    subcategory: string;
-    name: string; quantityType: 'KG' | 'PIECE' | 'LITER' | 'METER';
-    quantity: number; unitPrice: number;
+type AnyItem = {
+    _id: string; // unique key for form
+    mainCategoryId: string;
+    formType: 'METAL_FORM' | 'STANDARD_FORM' | 'PAINT_FORM' | ''; // determines shape
+
+    // Shared / other
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    quantityType: 'KG' | 'PIECE' | 'LITER' | 'METER';
     piecesPerKg: number;
+
+    // Metal specific
+    subtype?: 'STAINLESS' | 'IRON';
+    shape?: string;
+    sectionSize?: string;
+    thickness?: string;
+    lengthPerPiece?: number;
+
+    // Workshop specific
+    subcategory?: string;
 };
-type OtherItem = {
-    category: 'OTHER';
-    name: string; quantity: number; unitPrice: number;
-};
-type AnyItem = MetalItem | WorkshopItem | OtherItem;
 
 // ─── Workshop Subcategories ─────────────────────────────────────────────────────────────────────────────
 const DEFAULT_WS_SUBCATS: { key: string; label: string; suggestions: string[]; color: string }[] = [
@@ -54,10 +55,17 @@ function getPricePerPiece(unitPrice: number, piecesPerKg: number): number | null
     return null;
 }
 
-function defaultItem(cat: string, defaultSub?: string): AnyItem {
-    if (cat === 'METAL') return { category: 'METAL', subtype: 'IRON', shape: '', sectionSize: '', thickness: '', quantityType: 'PIECE', quantity: 1, unitPrice: 0, piecesPerKg: 0, lengthPerPiece: 6 };
-    if (cat === 'WORKSHOP') return { category: 'WORKSHOP', subcategory: defaultSub || 'FASTENERS', name: '', quantityType: 'PIECE', quantity: 1, unitPrice: 0, piecesPerKg: 0 };
-    return { category: 'OTHER', name: '', quantity: 1, unitPrice: 0 };
+function defaultItem(mc?: any): AnyItem {
+    const baseId = Math.random().toString(36).substring(7);
+    if (!mc) return { _id: baseId, mainCategoryId: '', formType: '', name: '', quantity: 1, unitPrice: 0, quantityType: 'PIECE', piecesPerKg: 0 };
+
+    if (mc.formType === 'METAL_FORM') {
+        return { _id: baseId, mainCategoryId: mc.id, formType: 'METAL_FORM', subtype: 'IRON', shape: '', sectionSize: '', thickness: '', quantityType: 'PIECE', quantity: 1, unitPrice: 0, piecesPerKg: 0, lengthPerPiece: 6, name: '' };
+    }
+    if (mc.formType === 'STANDARD_FORM' || mc.formType === 'PAINT_FORM') {
+        return { _id: baseId, mainCategoryId: mc.id, formType: mc.formType, subcategory: 'FASTENERS', name: '', quantityType: 'PIECE', quantity: 1, unitPrice: 0, piecesPerKg: 0 };
+    }
+    return { _id: baseId, mainCategoryId: mc.id, formType: '', name: '', quantity: 1, unitPrice: 0, quantityType: 'PIECE', piecesPerKg: 0 };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -74,56 +82,36 @@ export default function PurchasesPage() {
     const supplierRef = useRef<HTMLDivElement>(null);
     const [isAdmin, setIsAdmin] = useState(false);
 
-    // ─ Workshop Items & Categories Manager (persistent localStorage) ─
-    type WsItem = { id: string; subcategory: string; name: string; unit: string; defaultPrice: number };
-    const WS_KEY = 'erp_ws_items';
-    const WS_CAT_KEY = 'erp_ws_categories';
-    const [wsItems, setWsItems] = useState<WsItem[]>([]);
+    const WS_CAT_KEY = 'erp_inventory_categories';
     const [wsCategories, setWsCategories] = useState(DEFAULT_WS_SUBCATS);
-    const [showWsMgr, setShowWsMgr] = useState(false);
-    const [wsForm, setWsForm] = useState({ subcategory: 'FASTENERS', name: '', unit: 'قطعة', defaultPrice: '' });
+    const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+    const [mainCategories, setMainCategories] = useState<any[]>([]);
 
-    // Category management state
-    const [catForm, setCatForm] = useState({ label: '', color: '#ffcc80' });
-
-    const loadWsData = () => {
-        try { const r = localStorage.getItem(WS_KEY); setWsItems(r ? JSON.parse(r) : []); } catch { setWsItems([]); }
+    const loadWsData = async () => {
+        setLoading(true);
         try { const c = localStorage.getItem(WS_CAT_KEY); if (c) { const parsed = JSON.parse(c); if (parsed.length) setWsCategories(parsed); } } catch { }
-    };
-    const saveWsItems = (list: WsItem[]) => { localStorage.setItem(WS_KEY, JSON.stringify(list)); setWsItems(list); };
-    const saveWsCategories = (list: typeof wsCategories) => { localStorage.setItem(WS_CAT_KEY, JSON.stringify(list)); setWsCategories(list); };
-
-    // category actions
-    const handleAddCategory = () => {
-        if (!catForm.label.trim()) return;
-        const newKey = 'CAT_' + Date.now();
-        saveWsCategories([...wsCategories, { key: newKey, label: catForm.label.trim(), suggestions: [], color: catForm.color }]);
-        setCatForm({ label: '', color: '#ffcc80' });
-    };
-    const handleDeleteCategory = (key: string) => {
-        if (!confirm('القسم سيحذف فقط من القائمة ولن يتم حذف البنود المتعلقة به من فواتير المشتريات.. هل أنت متأكد من الحذف؟')) return;
-        saveWsCategories(wsCategories.filter(c => c.key !== key));
-    };
-    const handleEditCategoryName = (key: string) => {
-        const newName = prompt('اكتب الاسم الجديد للقسم:');
-        if (newName && newName.trim()) {
-            saveWsCategories(wsCategories.map(c => c.key === key ? { ...c, label: newName.trim() } : c));
+        try {
+            const res = await fetch('/api/inventory');
+            if (res.ok) {
+                const data = await res.json();
+                setInventoryItems(Array.isArray(data) ? data : []);
+            }
+        } catch { console.error('Failed to load inventory'); }
+        try {
+            const r2 = await fetch('/api/categories/main');
+            if (r2.ok) {
+                const cats = await r2.json();
+                setMainCategories(Array.isArray(cats) ? cats : []);
+            } else {
+                console.error('API Error:', r2.status);
+                setMainCategories([]);
+            }
+        } catch (err) {
+            console.error('Fetch categories error:', err);
+            setMainCategories([]);
+        } finally {
+            setLoading(false);
         }
-    };
-
-    const wsAddItem = () => {
-        if (!wsForm.name.trim()) return;
-        const newItem: WsItem = { id: Date.now().toString(), subcategory: wsForm.subcategory || wsCategories[0]?.key || 'OTHER_WS', name: wsForm.name.trim(), unit: wsForm.unit || 'قطعة', defaultPrice: parseFloat(wsForm.defaultPrice) || 0 };
-        saveWsItems([...wsItems, newItem]);
-        setWsForm(f => ({ ...f, name: '', defaultPrice: '' }));
-    };
-    const wsDeleteItem = (id: string) => saveWsItems(wsItems.filter(x => x.id !== id));
-    const wsUseItem = (ws: WsItem) => {
-        const unitMap: Record<string, WorkshopItem['quantityType']> = { 'كيلو': 'KG', 'لتر': 'LITER', 'متر': 'METER' };
-        const qt: WorkshopItem['quantityType'] = unitMap[ws.unit] || 'PIECE';
-        const newItem: WorkshopItem = { category: 'WORKSHOP', subcategory: ws.subcategory, name: ws.name, quantityType: qt, quantity: 1, unitPrice: ws.defaultPrice, piecesPerKg: 0 };
-        setItems(prev => [...prev, newItem]);
-        setShowWsMgr(false);
     };
 
     useEffect(() => {
@@ -143,8 +131,26 @@ export default function PurchasesPage() {
         fetchNextInv();
         try {
             const u = JSON.parse(localStorage.getItem('erp_user') || '{}');
-            setIsAdmin(u.role === 'ADMIN' || !u.role);
+            setIsAdmin((u?.role || '').toUpperCase() === 'ADMIN' || !u?.role);
         } catch { }
+
+        const fetchSuppliers = async () => {
+            let locals: string[] = [];
+            try { locals = JSON.parse(localStorage.getItem('erp_suppliers') || '[]'); } catch { }
+            try {
+                const res = await fetch('/api/suppliers');
+                if (res.ok) {
+                    const data = await res.json();
+                    const globalNames = data.map((d: any) => d.name).filter(Boolean);
+                    setSavedSuppliers(Array.from(new Set([...globalNames, ...locals])).slice(0, 50));
+                } else {
+                    setSavedSuppliers(locals);
+                }
+            } catch {
+                setSavedSuppliers(locals);
+            }
+        };
+        fetchSuppliers();
 
         const handler = (e: MouseEvent) => { if (supplierRef.current && !supplierRef.current.contains(e.target as Node)) setSupplierSugOpen(false); };
         document.addEventListener('mousedown', handler); return () => document.removeEventListener('mousedown', handler);
@@ -157,8 +163,8 @@ export default function PurchasesPage() {
         localStorage.setItem('erp_suppliers', JSON.stringify(updated));
     };
 
-    const addItem = (cat: string) => {
-        setItems(prev => [...prev, defaultItem(cat, wsCategories.length > 0 ? wsCategories[0].key : undefined)]);
+    const addItem = () => {
+        setItems(prev => [...prev, defaultItem(mainCategories.length > 0 ? mainCategories[0] : null)]);
     };
     const removeItem = (idx: number) => { const n = [...items]; n.splice(idx, 1); setItems(n); };
     const updateItem = (idx: number, patch: Partial<AnyItem>) => {
@@ -173,40 +179,42 @@ export default function PurchasesPage() {
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             totalPrice: getItemTotal(item),
+            mainCategoryId: item.mainCategoryId || null,
         };
-        if (item.category === 'METAL') {
-            const m = item as MetalItem;
-            const isKg = m.quantityType === 'KG';
-            const pricePerPiece = isKg ? (m.piecesPerKg > 0 ? m.unitPrice / m.piecesPerKg : m.unitPrice) : m.unitPrice;
-            const extraName = !isKg ? ` (طول ${m.lengthPerPiece}م)` : '';
+        const mcName = mainCategories.find(c => c.id === item.mainCategoryId)?.name || '';
+
+        if (item.formType === 'METAL_FORM') {
+            const isKg = item.quantityType === 'KG';
+            const pricePerPiece = isKg ? (item.piecesPerKg > 0 ? item.unitPrice / item.piecesPerKg : item.unitPrice) : item.unitPrice;
+            const extraName = !isKg ? ` (طول ${item.lengthPerPiece}م)` : '';
             return {
                 ...base,
                 type: 'RAW_MATERIAL',
-                name: `${m.subtype === 'IRON' ? 'حديد' : 'ستانلس'} / ${m.shape} ${m.sectionSize} - سماكة ${m.thickness}${extraName}`,
-                thickness: parseFloat(m.thickness) || null,
-                dimensions: m.sectionSize,
+                inventoryCategory: mcName,
+                name: `${item.subtype === 'IRON' ? 'حديد' : 'ستانلس'} / ${item.shape} ${item.sectionSize} - سماكة ${item.thickness}${extraName}`,
+                thickness: parseFloat(item.thickness || '0') || null,
+                dimensions: item.sectionSize,
                 pricePerPiece,                          // سعر القطعة للمخزن
                 customUnit: isKg ? 'كجم' : 'قطعة',
             };
         }
-        if (item.category === 'WORKSHOP') {
-            const w = item as WorkshopItem;
-            const pricePerPiece = (w.quantityType === 'KG' && w.piecesPerKg > 0)
-                ? w.unitPrice / w.piecesPerKg
-                : w.unitPrice;
-            const subcatLabel = wsCategories.find(x => x.key === w.subcategory)?.label || w.subcategory;
+
+        if (item.formType === 'STANDARD_FORM' || item.formType === 'PAINT_FORM') {
+            const pricePerPiece = (item.quantityType === 'KG' && item.piecesPerKg > 0)
+                ? item.unitPrice / item.piecesPerKg
+                : item.unitPrice;
             return {
                 ...base,
                 type: 'COMPONENT',
-                inventoryCategory: subcatLabel,
-                name: w.name,
+                inventoryCategory: mcName,
+                name: item.name,
                 thickness: null,
-                dimensions: w.quantityType,
+                dimensions: item.quantityType,
                 pricePerPiece,
             };
         }
-        const o = item as OtherItem;
-        return { ...base, type: 'COMPONENT', name: o.name, thickness: null, dimensions: null, pricePerPiece: o.unitPrice };
+
+        return { ...base, type: 'COMPONENT', name: item.name, inventoryCategory: mcName, thickness: null, dimensions: null, pricePerPiece: item.unitPrice };
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -246,18 +254,12 @@ export default function PurchasesPage() {
     };
 
     return (
-        <div className="animate-fade-in">
+        <div className="unified-container animate-fade-in">
             <header style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
                     <h1>المشتريات وإمدادات المصنع</h1>
                     <p>تسجيل فواتير الموردين بتصنيفات ذكية - سعر القطعة يُحسب تلقائياً من وزن الكيلو</p>
                 </div>
-                {isAdmin && (
-                    <button type="button" onClick={() => setShowWsMgr(true)} className="btn-primary"
-                        style={{ padding: '10px 18px', background: '#8d6e63', display: 'flex', alignItems: 'center', gap: '7px' }}>
-                        🔧 إدارة بنود مستلزمات الورشة <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: '12px', padding: '1px 8px', fontSize: '0.82rem' }}>{wsItems.length}</span>
-                    </button>
-                )}
             </header>
 
             {successMsg && <div style={{ background: 'rgba(102,187,106,0.2)', color: '#66bb6a', padding: '14px', borderRadius: '8px', marginBottom: '1.5rem', fontWeight: 'bold' }}>{successMsg}</div>}
@@ -303,116 +305,124 @@ export default function PurchasesPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
                         <h3>أصناف الفاتورة ({items.length})</h3>
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                            <button type="button" onClick={() => addItem('METAL')} className="btn-primary" style={{ padding: '7px 14px', fontSize: '0.85rem', background: '#78909c' }}>⚙️ + معدن (حديد/ستانلس)</button>
-                            <button type="button" onClick={() => addItem('WORKSHOP')} className="btn-primary" style={{ padding: '7px 14px', fontSize: '0.85rem', background: '#8d6e63' }}>🔩 + مستلزمات ورشة</button>
-                            <button type="button" onClick={() => addItem('OTHER')} className="btn-primary" style={{ padding: '7px 14px', fontSize: '0.85rem', background: '#546e7a' }}>📦 + صنف آخر</button>
+                            <button type="button" onClick={() => addItem()} className="btn-modern btn-primary" style={{ padding: '7px 14px', fontSize: '0.9rem', fontWeight: 'bold' }}>➕ إضافة صنف مشتريات جديد</button>
                         </div>
                     </div>
 
-                    {items.length === 0 && <p style={{ textAlign: 'center', margin: '2.5rem', color: '#666' }}>اضغط أحد أزرار الإضافة لبدء تسجيل الفاتورة</p>}
+                    {items.length === 0 && <p style={{ textAlign: 'center', margin: '2.5rem', color: '#666' }}>اضغط زر الإضافة لبدء تسجيل الفاتورة</p>}
 
                     {items.map((item, idx) => (
-                        <div key={idx} style={{ background: 'rgba(0,0,0,0.12)', border: `1px solid ${item.category === 'METAL' ? 'rgba(120,144,156,0.3)' : item.category === 'WORKSHOP' ? 'rgba(141,110,99,0.3)' : 'rgba(84,110,122,0.3)'}`, borderRadius: '10px', padding: '16px', marginBottom: '12px' }}>
+                        <div key={item._id} style={{ background: 'rgba(0,0,0,0.12)', border: `1px solid rgba(120,144,156,0.3)`, borderRadius: '10px', padding: '16px', marginBottom: '12px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', background: item.category === 'METAL' ? '#78909c22' : '#8d6e6322', color: item.category === 'METAL' ? '#78909c' : item.category === 'WORKSHOP' ? '#a1887f' : '#aaa' }}>
-                                    {item.category === 'METAL' ? '⚙️ معدن' : item.category === 'WORKSHOP' ? '🔩 مستلزمات ورشة' : '📦 صنف آخر'}
-                                </span>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <label style={{ fontSize: '0.85rem', color: '#aaa', margin: 0 }}>الفئة (Dropdown)</label>
+                                    <select className="input-glass" style={{ minWidth: '200px', fontWeight: 'bold', border: '1px solid var(--primary-color)' }} value={item.mainCategoryId} onChange={e => {
+                                        const mc = mainCategories.find(c => c.id === e.target.value);
+                                        if (mc) {
+                                            const nItem = defaultItem(mc);
+                                            updateItem(idx, { mainCategoryId: mc.id, formType: mc.formType, subtype: nItem.subtype, shape: nItem.shape, sectionSize: nItem.sectionSize, thickness: nItem.thickness, quantityType: nItem.quantityType });
+                                        }
+                                    }}>
+                                        {mainCategories.length === 0 && <option value="">جاري التحميل...</option>}
+                                        {mainCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                </div>
                                 <button type="button" onClick={() => removeItem(idx)} style={{ background: 'transparent', color: '#ff5252', border: '1px solid #ff525244', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>✕ حذف</button>
                             </div>
 
                             {/* ═══ METAL ITEM ═══ */}
-                            {item.category === 'METAL' && (() => {
-                                const m = item as MetalItem;
+                            {item.formType === 'METAL_FORM' && (() => {
+                                const m = item;
                                 const isKg = m.quantityType === 'KG';
                                 const pricePerPiece = isKg ? getPricePerPiece(m.unitPrice, m.piecesPerKg) : m.unitPrice;
-                                const pricePerMeter = (!isKg && m.lengthPerPiece > 0) ? m.unitPrice / m.lengthPerPiece : null;
+                                const pricePerMeter = (!isKg && m.lengthPerPiece && m.lengthPerPiece > 0) ? m.unitPrice / m.lengthPerPiece : null;
 
                                 return (
                                     <>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
+                                        <div className="flex-group">
                                             <div style={{ width: '130px' }}>
                                                 <label htmlFor={`pur_qtyt-${idx}`}>طريقة الشراء</label>
-                                                <select id={`pur_qtyt-${idx}`} className="input-glass" value={m.quantityType} onChange={e => updateItem(idx, { quantityType: e.target.value as any })} title="طريقة الشراء">
+                                                <select id={`pur_qtyt-${idx}`} className="input-glass w-full" value={m.quantityType} onChange={e => updateItem(idx, { quantityType: e.target.value as any })} title="طريقة الشراء">
                                                     <option value="PIECE">بالعدد (قطعة/ماسورة)</option>
                                                     <option value="KG">بالوزن (كيلو)</option>
                                                 </select>
                                             </div>
                                             <div style={{ width: '100px' }}>
                                                 <label htmlFor={`pur_subt-${idx}`}>نوع المعدن</label>
-                                                <select id={`pur_subt-${idx}`} className="input-glass" value={m.subtype} onChange={e => updateItem(idx, { subtype: e.target.value as any })} title="نوع المعدن">
+                                                <select id={`pur_subt-${idx}`} className="input-glass w-full" value={m.subtype} onChange={e => updateItem(idx, { subtype: e.target.value as any })} title="نوع المعدن">
                                                     <option value="IRON">حديد</option>
                                                     <option value="STAINLESS">ستانلس</option>
                                                 </select>
                                             </div>
                                             <div style={{ flex: 1, minWidth: '140px' }}>
                                                 <label htmlFor={`pur_shape-${idx}`}>الشكل / النوع</label>
-                                                <select id={`pur_shape-${idx}`} className="input-glass" value={m.shape} onChange={e => updateItem(idx, { shape: e.target.value })} title="الشكل أو النوع">
+                                                <select id={`pur_shape-${idx}`} className="input-glass w-full" value={m.shape} onChange={e => updateItem(idx, { shape: e.target.value })} title="الشكل أو النوع">
                                                     <option value="">-- اختر --</option>
                                                     {METAL_SHAPES.map(sh => <option key={sh} value={sh}>{sh}</option>)}
                                                 </select>
                                             </div>
                                             <div style={{ width: '120px' }}>
                                                 <label htmlFor={`pur_sec-${idx}`}>القطاع / الحجم</label>
-                                                <input id={`pur_sec-${idx}`} type="text" list="metal-sections" className="input-glass" value={m.sectionSize} onChange={e => updateItem(idx, { sectionSize: e.target.value })} placeholder="اختر الحجم أو اكتب" title="القطاع أو الحجم" />
+                                                <input id={`pur_sec-${idx}`} type="text" list="metal-sections" className="input-glass w-full" value={m.sectionSize} onChange={e => updateItem(idx, { sectionSize: e.target.value })} placeholder="اختر الحجم أو اكتب" title="القطاع أو الحجم" />
                                                 <datalist id="metal-sections">
                                                     {METAL_SECTIONS.map(sec => <option key={sec} value={sec} />)}
                                                 </datalist>
                                             </div>
                                             <div style={{ width: '90px' }}>
                                                 <label htmlFor={`pur_thk-${idx}`}>السماكة</label>
-                                                <input id={`pur_thk-${idx}`} type="text" className="input-glass" value={m.thickness} onChange={e => updateItem(idx, { thickness: e.target.value })} placeholder="1.5mm" title="السماكة" />
+                                                <input id={`pur_thk-${idx}`} type="text" className="input-glass w-full" value={m.thickness} onChange={e => updateItem(idx, { thickness: e.target.value })} placeholder="1.5mm" title="السماكة" />
                                             </div>
 
                                             <div style={{ width: '90px' }}>
                                                 <label htmlFor={`pur_qty-${idx}`}>الكمية ({isKg ? 'كيلو' : 'عدد'})</label>
-                                                <input id={`pur_qty-${idx}`} type="number" className="input-glass" value={m.quantity} onChange={e => updateItem(idx, { quantity: parseFloat(e.target.value) })} min="0.001" step="any" required title="الكمية" />
+                                                <input id={`pur_qty-${idx}`} type="number" className="input-glass w-full" value={m.quantity} onChange={e => updateItem(idx, { quantity: parseFloat(e.target.value) })} min="0.001" step="any" required title="الكمية" />
                                             </div>
                                             <div style={{ width: '110px' }}>
                                                 <label htmlFor={`pur_uprice-${idx}`}>سعر {isKg ? 'الكيلو' : 'القطعة'} ({currencySymbol})</label>
-                                                <input id={`pur_uprice-${idx}`} type="number" className="input-glass" value={m.unitPrice} onChange={e => updateItem(idx, { unitPrice: parseFloat(e.target.value) })} min="0" step="any" required title="سعر الوحدة" />
+                                                <input id={`pur_uprice-${idx}`} type="number" className="input-glass w-full" value={m.unitPrice} onChange={e => updateItem(idx, { unitPrice: parseFloat(e.target.value) })} min="0" step="any" required title="سعر الوحدة" />
                                             </div>
                                             <div style={{ width: '100px' }}>
                                                 <label>الإجمالي</label>
-                                                <div style={{ padding: '0.75rem 0', fontWeight: 'bold', color: 'var(--primary-color)' }}>{getItemTotal(m).toFixed(0)}</div>
+                                                <div className="text-primary font-bold p-1">{getItemTotal(m).toFixed(0)}</div>
                                             </div>
                                         </div>
 
                                         {/* ── حساب التفاصيل إضافية للقطعة والمتر ── */}
-                                        <div style={{ marginTop: '12px', display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap', ...piecesBox }}>
+                                        <div className="flex-group mt-2" style={{ background: 'rgba(41,182,246,0.06)', border: '1px solid rgba(41,182,246,0.25)', borderRadius: '8px', padding: '10px 12px' }}>
 
                                             {isKg ? (
                                                 <>
-                                                    <span style={{ color: '#29b6f6', fontWeight: 600, fontSize: '0.85rem' }}>⚖️ تحويل الكيلو → قطعة:</span>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <label htmlFor={`pur_pkg-${idx}`} style={{ color: '#aaa', fontSize: '0.83rem', margin: 0 }}>عدد القطع في الكيلو:</label>
+                                                    <span className="text-primary font-bold text-sm">⚖️ تحويل الكيلو → قطعة:</span>
+                                                    <div className="flex-center gap-2">
+                                                        <label htmlFor={`pur_pkg-${idx}`} className="text-muted text-sm my-0">عدد القطع في الكيلو:</label>
                                                         <input id={`pur_pkg-${idx}`} type="number" className="input-glass" value={m.piecesPerKg || ''} onChange={e => updateItem(idx, { piecesPerKg: parseFloat(e.target.value) || 0 })}
                                                             min="0" step="any" placeholder="0 = لا ينطبق" style={{ width: '110px' }} title="عدد القطع في الكيلو" />
                                                     </div>
                                                     {pricePerPiece !== null ? (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            <span style={{ color: '#919398', fontSize: '0.83rem' }}>سعر القطعة:</span>
-                                                            <strong style={{ color: '#66bb6a', fontSize: '1rem' }}>{pricePerPiece.toFixed(0)} {currencySymbol}</strong>
-                                                            <span style={{ color: '#555', fontSize: '0.75rem' }}>(يُستخدم في التصنيع)</span>
+                                                        <div className="flex-center gap-1">
+                                                            <span className="text-muted text-sm">سعر القطعة:</span>
+                                                            <strong className="text-success text-base">{pricePerPiece.toFixed(0)} {currencySymbol}</strong>
+                                                            <span className="text-muted text-xs">(يُستخدم في التصنيع)</span>
                                                         </div>
                                                     ) : (
-                                                        <span style={{ color: '#555', fontSize: '0.82rem' }}>أدخل العدد לחساب السعر</span>
+                                                        <span className="text-muted text-sm">أدخل العدد לחساب السعر</span>
                                                     )}
                                                 </>
                                             ) : (
-                                                <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                        <span style={{ color: '#29b6f6', fontWeight: 600, fontSize: '0.85rem' }}>📏 تفاصيل العود/القطعة:</span>
-                                                        <label htmlFor={`pur_len-${idx}`} style={{ color: '#aaa', fontSize: '0.83rem', margin: 0 }}>طول الوحدة (بالمتر):</label>
+                                                <div className="flex-group w-full mt-2">
+                                                    <div className="flex-center gap-2">
+                                                        <span className="text-primary font-bold text-sm">📏 تفاصيل العود/القطعة:</span>
+                                                        <label htmlFor={`pur_len-${idx}`} className="text-muted text-sm my-0">طول الوحدة (بالمتر):</label>
                                                         <input id={`pur_len-${idx}`} type="number" className="input-glass" value={m.lengthPerPiece || ''} onChange={e => updateItem(idx, { lengthPerPiece: parseFloat(e.target.value) || 0 })}
                                                             min="0.1" step="any" placeholder="6" style={{ width: '90px' }} title="طول الوحدة بالمتر" />
                                                     </div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(0,0,0,0.2)', padding: '5px 15px', borderRadius: '6px' }}>
-                                                        <span style={{ color: '#9c27b0', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                                                    <div className="flex-center gap-3 bg-black/20 px-4 py-1 rounded-md">
+                                                        <span className="text-fuchsia-600 text-sm font-bold">
                                                             إجمالي الأمتار الموردة: {((m.quantity || 0) * (m.lengthPerPiece || 0)).toFixed(0)} متر
                                                         </span>
-                                                        <span style={{ color: '#555' }}>|</span>
+                                                        <span className="text-muted">|</span>
                                                         {pricePerMeter !== null && (
-                                                            <span style={{ color: '#ffa726', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                                                            <span className="text-orange-400 text-sm font-bold">
                                                                 سعر المتر التقريبي: {pricePerMeter.toFixed(4)} {currencySymbol}
                                                             </span>
                                                         )}
@@ -425,8 +435,8 @@ export default function PurchasesPage() {
                             })()}
 
                             {/* ═══ WORKSHOP ITEM ═══ */}
-                            {item.category === 'WORKSHOP' && (() => {
-                                const w = item as WorkshopItem;
+                            {(item.formType === 'STANDARD_FORM' || item.formType === 'PAINT_FORM') && (() => {
+                                const w = item;
                                 const subcat = wsCategories.find(x => x.key === w.subcategory) || wsCategories[0] || DEFAULT_WS_SUBCATS[0];
                                 const isKg = w.quantityType === 'KG';
                                 const pricePerPiece = isKg ? getPricePerPiece(w.unitPrice, w.piecesPerKg) : null;
@@ -434,35 +444,54 @@ export default function PurchasesPage() {
                                 return (
                                     <>
                                         {/* ─ subcategory selector ─ */}
-                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                        <div className="flex-group mb-2">
                                             {wsCategories.map(sc => (
                                                 <button key={sc.key} type="button"
                                                     onClick={() => updateItem(idx, { subcategory: sc.key, name: '', quantityType: 'PIECE' } as any)}
-                                                    style={{ padding: '4px 12px', borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: w.subcategory === sc.key ? 700 : 400, background: w.subcategory === sc.key ? sc.color + '33' : 'transparent', border: `1px solid ${w.subcategory === sc.key ? sc.color : 'rgba(255,255,255,0.15)'}`, color: w.subcategory === sc.key ? sc.color : '#888' }}>
+                                                    className={`px-3 py-1 rounded-full cursor-pointer font-inherit text-sm ${w.subcategory === sc.key ? 'font-bold bg-opacity-20 border' : 'font-normal border-transparent hover:bg-white/5'}`}
+                                                    style={{ background: w.subcategory === sc.key ? sc.color + '33' : 'transparent', borderColor: w.subcategory === sc.key ? sc.color : 'rgba(255,255,255,0.15)', color: w.subcategory === sc.key ? sc.color : '#888' }}>
                                                     {sc.label}
                                                 </button>
                                             ))}
                                         </div>
 
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
-                                            <div style={{ flex: 1, minWidth: '200px', position: 'relative' }}>
+                                        <div className="flex-group">
+                                            <div className="flex-1 min-w-[200px] relative">
                                                 <label htmlFor={`ws_name-${idx}`}>اسم / نوع المستلزم</label>
-                                                <input id={`ws_name-${idx}`} type="text" className="input-glass" list={`ws-sug-${idx}`} value={w.name}
-                                                    onChange={e => updateItem(idx, { name: e.target.value })}
-                                                    placeholder={subcat.suggestions?.[0] || 'اكتب اسم الصنف..'}
+                                                <input id={`ws_name-${idx}`} type="text" className="input-glass w-full" list={`ws-sug-${idx}`} value={w.name}
+                                                    onChange={e => {
+                                                        const newVal = e.target.value;
+                                                        // Auto-fill price if we match an inventory item exactly
+                                                        const matchedItem = inventoryItems.find(i => i.name === newVal && i.category === subcat.label);
+                                                        if (matchedItem) {
+                                                            let qType: AnyItem['quantityType'] = 'PIECE';
+                                                            if (matchedItem.unit.includes('كجم') || matchedItem.unit.includes('كيلو')) qType = 'KG';
+                                                            if (matchedItem.unit.includes('لتر')) qType = 'LITER';
+                                                            if (matchedItem.unit.includes('متر')) qType = 'METER';
+                                                            updateItem(idx, { name: newVal, unitPrice: matchedItem.lastPurchasedPrice || 0, quantityType: qType });
+                                                        } else {
+                                                            updateItem(idx, { name: newVal });
+                                                        }
+                                                    }}
+                                                    placeholder="اكتب اسم الصنف.."
                                                     required title="اسم الصنف" />
-                                                {filteredSuggestions.length > 0 && w.name === '' && (
-                                                    <datalist id={`ws-sug-${idx}`}>
-                                                        {subcat.suggestions.map(s => <option key={s} value={s} />)}
-                                                    </datalist>
-                                                )}
+                                                <datalist id={`ws-sug-${idx}`}>
+                                                    {inventoryItems.filter(i => i.type === 'MATERIAL' && i.category === subcat.label).map(i => <option key={i.id} value={i.name} />)}
+                                                </datalist>
                                                 {/* Quick suggestion chips */}
-                                                {w.name === '' && subcat.suggestions?.length > 0 && (
-                                                    <div style={{ marginTop: '6px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                                        {subcat.suggestions.slice(0, 5).map(s => (
-                                                            <button key={s} type="button" onClick={() => updateItem(idx, { name: s })}
-                                                                style={{ padding: '2px 8px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.75rem', background: `${subcat.color}18`, border: `1px solid ${subcat.color}40`, color: subcat.color, fontFamily: 'inherit' }} title={`اختر ${s}`}>
-                                                                {s}
+                                                {w.name === '' && (
+                                                    <div className="flex-group mt-1 gap-1">
+                                                        {inventoryItems.filter(i => i.type === 'MATERIAL' && i.category === subcat.label).slice(0, 5).map(i => (
+                                                            <button key={i.id} type="button" onClick={() => {
+                                                                let qType: AnyItem['quantityType'] = 'PIECE';
+                                                                if (i.unit.includes('كجم') || i.unit.includes('كيلو')) qType = 'KG';
+                                                                if (i.unit.includes('لتر')) qType = 'LITER';
+                                                                if (i.unit.includes('متر')) qType = 'METER';
+                                                                updateItem(idx, { name: i.name, unitPrice: i.lastPurchasedPrice || 0, quantityType: qType });
+                                                            }}
+                                                                className="px-2 py-0.5 rounded-full cursor-pointer text-xs font-inherit border"
+                                                                style={{ background: `${subcat.color}18`, borderColor: `${subcat.color}40`, color: subcat.color }} title={`اختر ${i.name}`}>
+                                                                {i.name}
                                                             </button>
                                                         ))}
                                                     </div>
@@ -470,7 +499,7 @@ export default function PurchasesPage() {
                                             </div>
                                             <div style={{ width: '130px' }}>
                                                 <label htmlFor={`ws_qtyt-${idx}`}>وحدة الكمية</label>
-                                                <select id={`ws_qtyt-${idx}`} className="input-glass" value={w.quantityType} onChange={e => updateItem(idx, { quantityType: e.target.value as any, piecesPerKg: 0 })} title="وحدة الكمية">
+                                                <select id={`ws_qtyt-${idx}`} className="input-glass w-full" value={w.quantityType} onChange={e => updateItem(idx, { quantityType: e.target.value as any, piecesPerKg: 0 })} title="وحدة الكمية">
                                                     <option value="PIECE">عدد (قطعة)</option>
                                                     <option value="KG">وزن (كيلو)</option>
                                                     <option value="LITER">حجم (لتر)</option>
@@ -493,21 +522,21 @@ export default function PurchasesPage() {
 
                                         {/* ── باكج الكيلو → قطعة (يظهر فقط لو KG) ── */}
                                         {isKg && (
-                                            <div style={{ marginTop: '12px', display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', ...piecesBox }}>
-                                                <span style={{ color: '#29b6f6', fontWeight: 600, fontSize: '0.85rem' }}>⚖️ تحويل الكيلو → قطعة:</span>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <label htmlFor={`ws_pkg-${idx}`} style={{ color: '#aaa', fontSize: '0.83rem', margin: 0 }}>كام قطعة في الكيلو:</label>
+                                            <div className="flex-group mt-3 bg-black/10 border border-blue-400/20 rounded-md py-2 px-3">
+                                                <span className="text-primary font-bold text-sm">⚖️ تحويل الكيلو → قطعة:</span>
+                                                <div className="flex-center gap-2">
+                                                    <label htmlFor={`ws_pkg-${idx}`} className="text-muted text-sm my-0">كام قطعة في الكيلو:</label>
                                                     <input id={`ws_pkg-${idx}`} type="number" className="input-glass" value={w.piecesPerKg || ''} onChange={e => updateItem(idx, { piecesPerKg: parseFloat(e.target.value) || 0 })}
                                                         min="0" step="any" placeholder="0 = لا ينطبق" style={{ width: '130px' }} title="عدد القطع في الكيلو" />
                                                 </div>
                                                 {pricePerPiece !== null ? (
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                        <span style={{ color: '#919398', fontSize: '0.83rem' }}>سعر القطعة:</span>
-                                                        <strong style={{ color: '#66bb6a', fontSize: '1rem' }}>{pricePerPiece.toFixed(0)} {currencySymbol}</strong>
-                                                        <span style={{ color: '#555', fontSize: '0.75rem' }}>(يُستخدم في التصنيع تلقائياً)</span>
+                                                    <div className="flex-center gap-1">
+                                                        <span className="text-muted text-sm">سعر القطعة:</span>
+                                                        <strong className="text-success text-base">{pricePerPiece.toFixed(0)} {currencySymbol}</strong>
+                                                        <span className="text-muted text-xs">(يُستخدم في التصنيع تلقائياً)</span>
                                                     </div>
                                                 ) : (
-                                                    <span style={{ color: '#555', fontSize: '0.82rem' }}>أدخل عدد القطع في الكيلو لحساب السعر تلقائياً</span>
+                                                    <span className="text-muted text-sm">أدخل عدد القطع في الكيلو لحساب السعر تلقائياً</span>
                                                 )}
                                             </div>
                                         )}
@@ -516,25 +545,25 @@ export default function PurchasesPage() {
                             })()}
 
                             {/* ═══ OTHER ITEM ═══ */}
-                            {item.category === 'OTHER' && (() => {
-                                const o = item as OtherItem;
+                            {item.formType === '' && (() => {
+                                const o = item;
                                 return (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
-                                        <div style={{ flex: 1, minWidth: '200px' }}>
+                                    <div className="flex-group">
+                                        <div className="flex-1 min-w-[200px]">
                                             <label htmlFor={`oth_name-${idx}`}>البيان / الوصف</label>
-                                            <input id={`oth_name-${idx}`} type="text" className="input-glass" value={o.name} onChange={e => updateItem(idx, { name: e.target.value })} placeholder="وصف الصنف.." required title="وصف الصنف" />
+                                            <input id={`oth_name-${idx}`} type="text" className="input-glass w-full" value={o.name} onChange={e => updateItem(idx, { name: e.target.value })} placeholder="وصف الصنف.." required title="وصف الصنف" />
                                         </div>
                                         <div style={{ width: '100px' }}>
                                             <label htmlFor={`oth_qty-${idx}`}>الكمية</label>
-                                            <input id={`oth_qty-${idx}`} type="number" className="input-glass" value={o.quantity} onChange={e => updateItem(idx, { quantity: parseFloat(e.target.value) })} min="0.001" step="any" required title="الكمية" />
+                                            <input id={`oth_qty-${idx}`} type="number" className="input-glass w-full" value={o.quantity} onChange={e => updateItem(idx, { quantity: parseFloat(e.target.value) })} min="0.001" step="any" required title="الكمية" />
                                         </div>
                                         <div style={{ width: '130px' }}>
                                             <label htmlFor={`oth_uprice-${idx}`}>سعر الوحدة ({currencySymbol})</label>
-                                            <input id={`oth_uprice-${idx}`} type="number" className="input-glass" value={o.unitPrice} onChange={e => updateItem(idx, { unitPrice: parseFloat(e.target.value) })} min="0" step="any" required title="سعر الوحدة" />
+                                            <input id={`oth_uprice-${idx}`} type="number" className="input-glass w-full" value={o.unitPrice} onChange={e => updateItem(idx, { unitPrice: parseFloat(e.target.value) })} min="0" step="any" required title="سعر الوحدة" />
                                         </div>
                                         <div style={{ width: '110px' }}>
                                             <label>الإجمالي</label>
-                                            <div style={{ padding: '0.75rem 0', fontWeight: 'bold', color: 'var(--primary-color)' }}>{getItemTotal(o).toFixed(0)}</div>
+                                            <div className="text-primary font-bold p-1">{getItemTotal(o).toFixed(0)}</div>
                                         </div>
                                     </div>
                                 );
@@ -544,120 +573,23 @@ export default function PurchasesPage() {
                 </div>
 
                 {/* Footer */}
-                <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '1rem', paddingTop: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <div className="flex-between mt-4 pt-6 border-t border-white/10">
                     <div>
-                        <h2 style={{ color: '#fff', margin: '0 0 4px' }}>إجمالي الفاتورة: <span style={{ color: 'var(--primary-color)' }}>{total.toFixed(0)} {currencySymbol}</span></h2>
-                        <p style={{ color: '#919398', fontSize: '0.82rem', margin: 0 }}>💡 سعر القطعة (من حقل الكيلو ÷ عدد القطع) يُحفظ في المخزن ويُستخدم تلقائياً في تكلفة التصنيع</p>
+                        <h2 className="text-white m-0 pb-1 text-xl">إجمالي الفاتورة: <span className="text-primary">{total.toLocaleString('en-US')} {currencySymbol}</span></h2>
+                        <p className="text-muted text-sm m-0">💡 سعر القطعة (من حقل الكيلو ÷ عدد القطع) يُحفظ في المخزن ويُستخدم تلقائياً في تكلفة التصنيع</p>
                     </div>
                     {isAdmin ? (
-                        <button type="submit" className="btn-primary" disabled={loading} style={{ opacity: loading ? 0.7 : 1, padding: '1rem 3rem', fontSize: '1.1rem' }}>
-                            {loading ? 'جاري الحفظ والترحيل...' : 'تأكيد وإدخال للمخزن ✔'}
+                        <button type="submit" className="btn-modern btn-primary text-lg px-8 py-3" disabled={loading}>
+                            {loading ? '⏳ جاري الحفظ والترحيل...' : '📦 تأكيد وإدخال للمخزن ✔'}
                         </button>
                     ) : (
-                        <div style={{ color: '#E35E35', background: 'rgba(227,94,53,0.1)', padding: '1rem', borderRadius: '10px', textAlign: 'center', fontWeight: 'bold' }}>
+                        <div className="sh-badge partial relative px-6 py-4">
                             ⚠️ تسجيل المشتريات مسموح به للمديرين فقط
                         </div>
                     )}
                 </div>
             </form>
 
-            {/* ════ Workshop Items Manager Modal ════ */}
-            {showWsMgr && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 2000, padding: '20px', overflowY: 'auto' }}>
-                    <div style={{ background: '#1a1c22', border: '1px solid rgba(141,110,99,0.4)', borderRadius: '18px', padding: '2rem', width: '100%', maxWidth: '760px', marginTop: '40px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h3 style={{ margin: 0, color: '#ffcc80' }}>🔧 إدارة بنود مستلزمات الورشة الثابتة</h3>
-                            <button onClick={() => setShowWsMgr(false)} style={{ background: 'transparent', border: 'none', color: '#ff5252', fontSize: '1.4rem', cursor: 'pointer' }}>✕</button>
-                        </div>
-                        <p style={{ color: '#919398', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-                            أضف بنود دائمة يمكن استخدامها في أي فاتورة مشتريات بضغطة زر واحد. يتم حفظها محلياً.
-                        </p>
-
-                        {/* ── Add form ── */}
-                        <div style={{ background: 'rgba(141,110,99,0.08)', border: '1px solid rgba(141,110,99,0.25)', borderRadius: '12px', padding: '16px', marginBottom: '1.5rem' }}>
-                            <h4 style={{ margin: '0 0 12px', color: '#ffcc80', fontSize: '0.95rem' }}>➕ إضافة بند جديد</h4>
-                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                                <div style={{ minWidth: '160px' }}>
-                                    <label htmlFor="mgr_sub" style={{ fontSize: '0.82rem' }}>القسم</label>
-                                    <select id="mgr_sub" className="input-glass" value={wsForm.subcategory} onChange={e => setWsForm(f => ({ ...f, subcategory: e.target.value as any }))} title="اختر القسم">
-                                        {wsCategories.map(sc => <option key={sc.key} value={sc.key}>{sc.label}</option>)}
-                                    </select>
-                                </div>
-                                <div style={{ flex: 1, minWidth: '160px' }}>
-                                    <label htmlFor="mgr_name" style={{ fontSize: '0.82rem' }}>اسم البند</label>
-                                    <input id="mgr_name" type="text" className="input-glass" value={wsForm.name} onChange={e => setWsForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الصنف.." title="اسم البند" />
-                                </div>
-                                <div style={{ width: '90px' }}>
-                                    <label htmlFor="mgr_unit" style={{ fontSize: '0.82rem' }}>الوحدة</label>
-                                    <select id="mgr_unit" className="input-glass" value={wsForm.unit} onChange={e => setWsForm(f => ({ ...f, unit: e.target.value }))} title="اختر الوحدة">
-                                        <option value="قطعة">قطعة</option>
-                                        <option value="كيلو">كيلو</option>
-                                        <option value="لتر">لتر</option>
-                                        <option value="متر">متر</option>
-                                        <option value="زوج">زوج</option>
-                                        <option value="بكت">بكت</option>
-                                    </select>
-                                </div>
-                                <div style={{ width: '120px' }}>
-                                    <label htmlFor="mgr_price" style={{ fontSize: '0.82rem' }}>سعر افتراضي</label>
-                                    <input id="mgr_price" type="number" className="input-glass" value={wsForm.defaultPrice} onChange={e => setWsForm(f => ({ ...f, defaultPrice: e.target.value }))} min="0" step="any" placeholder="0" title="السعر الافتراضي" />
-                                </div>
-                                <button type="button" onClick={wsAddItem} className="btn-primary" style={{ padding: '10px 18px', background: '#8d6e63', whiteSpace: 'nowrap' }}>➕ إضافة</button>
-                            </div>
-                        </div>
-
-                        {/* ── Categories Editor ── */}
-                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', marginBottom: '1.5rem' }}>
-                            <h4 style={{ margin: '0 0 12px', color: '#ffcc80', fontSize: '0.95rem' }}>🏷️ إدارة أقسام المستلزمات</h4>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px' }}>
-                                <input type="text" className="input-glass" value={catForm.label} onChange={e => setCatForm(f => ({ ...f, label: e.target.value }))} placeholder="اسم القسم الجديد (مثل: كابلات كهرباء)" style={{ flex: 1, minWidth: '180px' }} />
-                                <input type="color" className="input-glass" value={catForm.color} onChange={e => setCatForm(f => ({ ...f, color: e.target.value }))} style={{ width: '40px', padding: '2px' }} title="لون القسم" />
-                                <button type="button" onClick={handleAddCategory} className="btn-primary" style={{ padding: '8px 14px', background: '#3f51b5' }}>+ إضافة قسم</button>
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                {wsCategories.map(sc => (
-                                    <div key={sc.key} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(0,0,0,0.2)', border: `1px solid ${sc.color}55`, borderRadius: '8px', padding: '4px 8px', color: sc.color, fontSize: '0.85rem' }}>
-                                        <span>{sc.label}</span>
-                                        <button type="button" onClick={() => handleEditCategoryName(sc.key)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', padding: '0 4px' }} title="تعديل الاسم">✏️</button>
-                                        <button type="button" onClick={() => handleDeleteCategory(sc.key)} style={{ background: 'none', border: 'none', color: '#E35E35', cursor: 'pointer', padding: '0 4px' }} title="حذف القسم">✕</button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* ── Items list grouped by subcategory ── */}
-                        {wsCategories.map(sc => {
-                            const scItems = wsItems.filter(x => x.subcategory === sc.key);
-                            if (scItems.length === 0) return null;
-                            return (
-                                <div key={sc.key} style={{ marginBottom: '16px' }}>
-                                    <div style={{ color: sc.color, fontWeight: 700, fontSize: '0.88rem', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        {sc.label} <span style={{ color: '#666', fontWeight: 400 }}>({scItems.length} بند)</span>
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        {scItems.map(wi => (
-                                            <div key={wi.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '8px 12px' }}>
-                                                <span style={{ flex: 1, fontWeight: 600 }}>{wi.name}</span>
-                                                <span style={{ color: '#919398', fontSize: '0.8rem' }}>{wi.unit}</span>
-                                                {wi.defaultPrice > 0 && <span style={{ color: 'var(--primary-color)', fontSize: '0.82rem' }}>{wi.defaultPrice.toFixed(0)} ج.م</span>}
-                                                <button type="button" onClick={() => wsUseItem(wi)}
-                                                    style={{ padding: '4px 10px', background: 'rgba(141,110,99,0.2)', border: '1px solid #8d6e63', color: '#ffcc80', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
-                                                    → إدراج
-                                                </button>
-                                                <button type="button" onClick={() => wsDeleteItem(wi.id)}
-                                                    style={{ padding: '4px 8px', background: 'rgba(227,94,53,0.1)', border: '1px solid #E35E35', color: '#E35E35', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', fontFamily: 'inherit' }}>
-                                                    🗑
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                        {wsItems.length === 0 && <p style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>لم تقم بإضافة بنود دائمة بعد.</p>}
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

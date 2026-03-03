@@ -31,7 +31,20 @@ export default function SealsPage() {
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('ALL');
     const fileRef = useRef<HTMLInputElement>(null);
-    useEffect(() => { setSeals(load()); }, []);
+    const footerFileRef = useRef<HTMLInputElement>(null);
+
+    // Footer Seal Settings
+    const [footerSealImage, setFooterSealImage] = useState('');
+    const [footerSealAlign, setFooterSealAlign] = useState('center');
+    const [savingFooter, setSavingFooter] = useState(false);
+
+    useEffect(() => {
+        setSeals(load());
+        fetch('/api/settings').then(r => r.json()).then(data => {
+            if (data.footerSealImage) setFooterSealImage(data.footerSealImage);
+            if (data.footerSealAlign) setFooterSealAlign(data.footerSealAlign);
+        }).catch(() => { });
+    }, []);
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -39,6 +52,29 @@ export default function SealsPage() {
         const reader = new FileReader();
         reader.onload = ev => setForm(f => ({ ...f, fileUrl: ev.target?.result as string }));
         reader.readAsDataURL(file);
+    };
+
+    const handleFooterImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => setFooterSealImage(ev.target?.result as string);
+        reader.readAsDataURL(file);
+    };
+
+    const saveFooterSettings = async () => {
+        setSavingFooter(true);
+        try {
+            await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ footerSealImage, footerSealAlign })
+            });
+            alert('✅ تم حفظ إعدادات الختم بنجاح');
+        } catch (e) {
+            alert('❌ حدث خطأ أثناء الحفظ');
+        }
+        setSavingFooter(false);
     };
 
     const handleSave = (e: React.FormEvent) => {
@@ -257,6 +293,53 @@ export default function SealsPage() {
                     </div>
                 </div>
             )}
+
+            {/* ════ FOOTER SEAL SETTINGS ════ */}
+            <div className="glass-panel" style={{ marginTop: '2rem', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                <h2 style={{ fontSize: '1.4rem', color: '#f59e0b', margin: '0 0 5px 0' }}>📄 ختم أسفل التقارير (Footer Seal)</h2>
+                <p style={{ color: '#919398', marginBottom: '1.5rem', fontSize: '0.9rem' }}>أضف صورة ليتم طباعتها تلقائياً أسفل الفواتير والتقارير مع تحديد مكان المحاذاة.</p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', alignItems: 'start' }} className="sales-search-grid">
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ color: '#ccc', marginBottom: '8px', display: 'block' }}>رافع الصورة (يفضل PNG شفاف)</label>
+                            <input ref={footerFileRef} type="file" accept="image/png, image/jpeg" style={{ display: 'none' }} onChange={handleFooterImageUpload} />
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <button onClick={() => footerFileRef.current?.click()} className="btn-secondary" style={{ flex: 1 }}>📁 اختيار صورة للختم</button>
+                                {footerSealImage && <button onClick={() => setFooterSealImage('')} className="btn-danger">🗑 إزالة</button>}
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={{ color: '#ccc', marginBottom: '8px', display: 'block' }}>موضع المحاذاة</label>
+                            <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '6px', borderRadius: '10px' }}>
+                                <button onClick={() => setFooterSealAlign('right')} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: footerSealAlign === 'right' ? 'var(--primary-color)' : 'transparent', color: footerSealAlign === 'right' ? '#fff' : '#aaa', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 'bold' }}>➡️ اليمين</button>
+                                <button onClick={() => setFooterSealAlign('center')} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: footerSealAlign === 'center' ? 'var(--primary-color)' : 'transparent', color: footerSealAlign === 'center' ? '#fff' : '#aaa', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 'bold' }}>⏺️ المنتصف</button>
+                                <button onClick={() => setFooterSealAlign('left')} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: footerSealAlign === 'left' ? 'var(--primary-color)' : 'transparent', color: footerSealAlign === 'left' ? '#fff' : '#aaa', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 'bold' }}>⬅️ اليسار</button>
+                            </div>
+                        </div>
+
+                        <button onClick={saveFooterSettings} disabled={savingFooter} className="btn-modern btn-primary" style={{ width: '100%', padding: '0 1rem' }}>
+                            {savingFooter ? '⏳ جاري الحفظ...' : '💾 حفظ إعدادات الختم'}
+                        </button>
+                    </div>
+
+                    <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '8px', color: '#000', minHeight: '280px', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ flex: 1, borderBottom: '2px solid #eee', paddingBottom: '1rem', marginBottom: '1rem' }}>
+                            <h4 style={{ margin: '0 0 10px 0', color: '#111' }}>نموذج أسفل التقرير</h4>
+                            <p style={{ margin: 0, color: '#666', fontSize: '0.8rem' }}>إجمالي الفاتورة المتبقي: 0 ج.م</p>
+                            <p style={{ margin: '5px 0 0 0', color: '#444', fontSize: '0.8rem' }}>نشكركم على ثقتكم فينا.</p>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: footerSealAlign === 'right' ? 'flex-start' : footerSealAlign === 'left' ? 'flex-end' : 'center', minHeight: '80px' }}>
+                            {footerSealImage ? (
+                                <img src={footerSealImage} alt="Footer Seal" style={{ maxWidth: '150px', maxHeight: '80px', objectFit: 'contain' }} />
+                            ) : (
+                                <div style={{ width: '150px', height: '80px', border: '2px dashed #ccc', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', fontSize: '0.8rem' }}>بدون ختم</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

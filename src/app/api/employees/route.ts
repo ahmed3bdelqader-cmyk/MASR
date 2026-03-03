@@ -7,7 +7,10 @@ export async function GET() {
     try {
         const employees = await prisma.employee.findMany({
             orderBy: { id: 'asc' },
-            include: { payrollRecords: { take: 5, orderBy: { date: 'desc' } } }
+            include: {
+                phones: true,
+                payrollRecords: { take: 5, orderBy: { date: 'desc' } }
+            }
         });
         return NextResponse.json(employees);
     } catch (error: any) {
@@ -33,8 +36,6 @@ export async function POST(req: Request) {
                 title: body.title,
                 age: parseInt(body.age) || null,
                 address: body.address,
-                contact: body.contact,
-                contact2: body.contact2,
                 nationalId: body.nationalId,
                 qualification: body.qualification,
                 department: body.department,
@@ -46,6 +47,14 @@ export async function POST(req: Request) {
                 username: body.canLogin && body.username ? body.username : null,
                 password: body.canLogin && body.password ? body.password : null,
                 employeeId: nextId,
+                phones: {
+                    create: (body.phones || []).length > 0
+                        ? body.phones.map((p: any) => ({
+                            phone: p.phone,
+                            isPrimaryWhatsApp: !!p.isPrimaryWhatsApp
+                        }))
+                        : []
+                }
             }
         });
 
@@ -71,8 +80,6 @@ export async function PUT(req: Request) {
                 title: data.title,
                 age: parseInt(data.age) || null,
                 address: data.address,
-                contact: data.contact,
-                contact2: data.contact2,
                 nationalId: data.nationalId,
                 qualification: data.qualification,
                 department: data.department,
@@ -83,6 +90,13 @@ export async function PUT(req: Request) {
                 role: data.role || 'WORKER',
                 username: data.canLogin && data.username ? data.username : null,
                 password: !data.canLogin ? null : data.password ? data.password : undefined,
+                phones: {
+                    deleteMany: {},
+                    create: (data.phones || []).length > 0 ? data.phones.map((p: any) => ({
+                        phone: p.phone,
+                        isPrimaryWhatsApp: !!p.isPrimaryWhatsApp
+                    })) : []
+                }
             }
         });
 
