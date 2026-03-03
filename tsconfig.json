@@ -17,6 +17,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "forceConsistentCasingInFileNames": true,
     "plugins": [
       {
         "name": "next"
@@ -38,7 +39,6 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules",
-    "C:/**/*"
+    "node_modules"
   ]
 }
