@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma from '@/core/prisma';
 
 const DEFAULT_PERMISSIONS = {
     '/clients': ['ADMIN', 'ACCOUNTANT', 'SALES'],

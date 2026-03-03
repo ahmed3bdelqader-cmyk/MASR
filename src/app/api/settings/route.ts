@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma from '@/core/prisma';
 
 // GET /api/settings — return all settings as a flat object { key: value }
 export async function GET() {

@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useState } from 'react';
-import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
+import { fetchReportTemplate, generatePrintHtml } from '@/core/reportTemplate';
 
 import { Search, ChevronDown, Check, X } from 'lucide-react';
 

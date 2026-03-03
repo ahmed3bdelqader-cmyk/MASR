@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useState } from 'react';
-import { fetchReportTemplate, ReportTemplate } from '@/lib/reportTemplate';
+import { fetchReportTemplate, ReportTemplate } from '@/core/reportTemplate';
 
 export function useReportFooter() {
     const [config, setConfig] = useState<ReportTemplate | null>(null);

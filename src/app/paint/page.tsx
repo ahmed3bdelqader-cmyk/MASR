@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
+import { fetchReportTemplate, generatePrintHtml } from '@/core/reportTemplate';
 
 type PaintEntry = {
     id: string;

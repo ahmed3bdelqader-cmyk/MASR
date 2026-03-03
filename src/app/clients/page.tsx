@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
+import { fetchReportTemplate, generatePrintHtml } from '@/core/reportTemplate';
 import { Search, Plus, Trash2, Pencil, BarChart3, MessageCircle, Wallet, MoreHorizontal } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import PrintLayout from '@/components/PrintLayout';

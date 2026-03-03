@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma from '@/core/prisma';
 
 // POST /api/clients/pay — تسجيل دفعة تحصيل من عميل + ترحيل الخزينة في نفس الوقت
 export async function POST(req: Request) {

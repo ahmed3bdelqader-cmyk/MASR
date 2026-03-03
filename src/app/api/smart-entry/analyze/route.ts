@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
-import prisma from '@/lib/prisma';
-import { decrypt } from '@/lib/encryption';
+import prisma from '@/core/prisma';
+import { decrypt } from '@/core/encryption';
 
 // Memory cache for API Key to avoid DB hitting on every request. Valid for 10 minutes.
 let cachedApiKey: { key: string, time: number } | null = null;

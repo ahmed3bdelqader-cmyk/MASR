@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { logSystemError } from '@/lib/logger';
+import prisma from '@/core/prisma';
+import { logSystemError } from '@/core/logger';
 
 // POST /api/payroll — تسجيل عملية صرف (راتب، سلفة، يومية، الخ)
 export async function POST(req: Request) {

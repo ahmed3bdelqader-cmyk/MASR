@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma from '@/core/prisma';
 import { startOfMonth, subMonths, format, endOfMonth } from 'date-fns';
 
 export async function GET() {

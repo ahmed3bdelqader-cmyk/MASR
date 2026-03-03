@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useState, useMemo } from 'react';
-import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
+import { fetchReportTemplate, generatePrintHtml } from '@/core/reportTemplate';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const alignOptions = ['right', 'center', 'left'] as const;

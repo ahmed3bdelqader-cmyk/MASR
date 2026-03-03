@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
+import { fetchReportTemplate, generatePrintHtml } from '@/core/reportTemplate';
 import { Search, Plus, Wallet, Pencil, MessageCircle, Trash2 } from 'lucide-react';
 
 // Supplier Type

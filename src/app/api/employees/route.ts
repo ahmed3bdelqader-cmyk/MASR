@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { logSystemError } from '@/lib/logger';
+import prisma from '@/core/prisma';
+import { logSystemError } from '@/core/logger';
 
 // GET /api/employees — الحصول على قائمة الموظفين
 export async function GET() {

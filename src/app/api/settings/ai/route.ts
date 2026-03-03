@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { encrypt, decrypt } from '@/lib/encryption';
+import prisma from '@/core/prisma';
+import { encrypt, decrypt } from '@/core/encryption';
 
 export async function GET() {
     try {

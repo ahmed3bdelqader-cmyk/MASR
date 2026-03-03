@@ -1,8 +1,8 @@
 'use client';
 import React, { useEffect, useState, useMemo } from 'react';
-import { fetchReportTemplate, generatePrintHtml } from '@/lib/reportTemplate';
+import { fetchReportTemplate, generatePrintHtml } from '@/core/reportTemplate';
 import ExpensesView from '@/components/ExpensesView';
-import { banksData, FinancialInstitution } from '@/lib/banksData';
+import { banksData, FinancialInstitution } from '@/core/banksData';
 
 
 type Treasury = { id: string, type: string, name: string | null, color: string | null, bankId: string | null, logoPath: string | null, balance: number, transactions: any[] };
